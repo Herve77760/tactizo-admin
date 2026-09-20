@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Tactizo Admin</title>
+<style>
+:root{
+  --bg:#f3f4f7; --panel:#ffffff; --panel2:#f8f9fb; --border:#e3e6ec;
+  --ink:#1a1d29; --muted:#6b7280; --faint:#9aa0ad;
+  --gold:#b9860f; --gold-bg:#fbf2df; --gold-ink:#5c4308;
+  --green:#1f9d54; --green-bg:#e9f8ee;
+  --orange:#c07a17; --orange-bg:#fdf1de;
+  --red:#c73a3a; --red-bg:#fbeaea;
+  --blue:#2f6fd6; --blue-bg:#eaf1fd;
+  --r:10px; --shadow:0 1px 2px rgba(20,20,30,.04), 0 6px 20px -8px rgba(20,20,30,.10);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);width:100%;min-width:0;}
+body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+a{color:inherit}
+button{font:inherit;cursor:pointer}
+input,select,textarea{font:inherit}
+h1,h2,h3{margin:0 0 8px}
+.muted{color:var(--muted)}
+.faint{color:var(--faint);font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* ---------- layout ---------- */
+#app{display:flex;min-height:100vh;}
+#sidebar{width:220px;flex:0 0 220px;background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto;}
+#logo{padding:0 20px 18px;font-weight:800;font-size:18px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+#logo .dot{width:9px;height:9px;border-radius:50%;background:var(--gold)}
+.navlink{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--muted);text-decoration:none;
+  font-size:13.5px;border-left:3px solid transparent;cursor:pointer;}
+.navlink:hover{background:var(--panel2);color:var(--ink)}
+.navlink.active{color:var(--ink);border-left-color:var(--gold);background:var(--gold-bg);font-weight:600}
+#navspacer{flex:1}
+#main{flex:1;min-width:0;padding:28px 32px 60px;max-width:1280px;}
+
+/* ---------- cards / tables ---------- */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);}
+.grid{display:grid;gap:16px}
+.grid-5{grid-template-columns:repeat(5,1fr)}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+@media (max-width:1100px){.grid-5{grid-template-columns:repeat(2,1fr)}.grid-3{grid-template-columns:repeat(2,1fr)}}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;
+  padding:8px 10px;border-bottom:1px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border2,var(--border))}
+tr:last-child td{border-bottom:none}
+tr.clickable:hover{background:var(--panel2);cursor:pointer}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600}
+.tag.g{background:var(--green-bg);color:var(--green)}
+.tag.o{background:var(--orange-bg);color:var(--orange)}
+.tag.r{background:var(--red-bg);color:var(--red)}
+.tag.b{background:var(--blue-bg);color:var(--blue)}
+.tag.n{background:var(--panel2);color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink);font-size:13px;font-weight:600}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#3a2c05}
+.btn.danger{background:var(--red);border-color:var(--red);color:#fff}
+.btn.small{padding:4px 10px;font-size:12px}
+.btn[disabled]{opacity:.5;cursor:default}
+input[type=text],input[type=password],input[type=number],input[type=email],select{
+  padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);width:100%}
+.row{display:flex;gap:10px;align-items:center}
+.between{display:flex;align-items:center;justify-content:space-between}
+.hstack{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* ---------- health banner ---------- */
+#health-banner{border-radius:var(--r);padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
+#health-banner.g{background:var(--green-bg);color:#0e5a30}
+#health-banner.o{background:var(--orange-bg);color:#6b4304}
+#health-banner.r{background:var(--red-bg);color:#7a1f1f}
+#health-banner .big{font-size:16px;font-weight:700}
+
+.voyant{border-radius:var(--r);padding:14px 16px;border:1px solid var(--border);background:var(--panel)}
+.voyant .head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:8px}
+.voyant .led{width:9px;height:9px;border-radius:50%}
+.led.g{background:var(--green)} .led.o{background:var(--orange)} .led.r{background:var(--red)} .led.gray{background:#c7cbd4}
+.voyant .lines{font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+
+.kpi{display:flex;flex-direction:column;gap:2px}
+.kpi .v{font-size:24px;font-weight:800}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .cmp{font-size:11.5px}
+.cmp.up{color:var(--green)} .cmp.down{color:var(--red)}
+
+.section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:26px 0 10px}
+.section-title:first-child{margin-top:0}
+
+#topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+#topbar h1{font-size:20px}
+#lastcheck{font-size:12px;color:var(--faint)}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(20,20,30,.45);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:#fff;border-radius:12px;padding:22px;width:420px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{margin-bottom:14px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.toast{position:fixed;bottom:20px;right:20px;padding:12px 18px;border-radius:10px;font-size:13.5px;font-weight:600;
+  box-shadow:0 10px 30px rgba(0,0,0,.2);z-index:200;max-width:380px}
+.toast.ok{background:var(--green);color:#fff}
+.toast.err{background:var(--red);color:#fff}
+
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+#login-box{background:#fff;padding:36px;border-radius:14px;box-shadow:var(--shadow);width:360px;max-width:90vw}
+#login-box .logo{font-weight:800;font-size:22px;margin-bottom:4px}
+#login-box .sub{color:var(--muted);font-size:13px;margin-bottom:22px}
+.err-msg{color:var(--red);font-size:13px;margin-top:10px}
+
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:13px;color:var(--muted)}
+.empty{padding:30px;text-align:center;color:var(--muted);font-size:13.5px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);
+  border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div id="login-box">
+    <div class="logo">TACTIZO <span style="color:var(--gold)">ADMIN</span></div>
+    <div class="sub">Back-office privé — accès réservé.</div>
+    <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="username"></div>
+    <div class="field"><label>Mot de passe</label><input id="login-pass" type="password" autocomplete="current-password"></div>
+    <button class="btn primary" id="login-btn" style="width:100%;justify-content:center">Se connecter</button>
+    <div class="err-msg" id="login-err" hidden></div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div id="sidebar">
+    <div id="logo"><span class="dot"></span>TACTIZO <span style="font-weight:400;color:var(--muted)">Admin</span></div>
+    <a class="navlink" data-view="dashboard">🏠 Dashboard</a>
+    <a class="navlink" data-view="joueurs">👥 Joueurs</a>
+    <a class="navlink" data-view="ligues">🏆 Ligues</a>
+    <a class="navlink" data-view="usage">📊 Usage</a>
+    <a class="navlink" data-view="monetisation">💰 Monétisation</a>
+    <a class="navlink" data-view="systeme">🖥️ Système</a>
+    <a class="navlink" data-view="journal">📜 Journal admin</a>
+    <div id="navspacer"></div>
+    <a class="navlink" id="logout-link">↩ Déconnexion</a>
+  </div>
+  <div id="main"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"></script>
+<script>
+'use strict';
+const SB_URL = "https://mdqmhrorpdyrsjsbawdl.supabase.co";
+const SB_KEY = "sb_publishable_1xe1X9iIPahncWpQpRkrdg_Hw49QXO0";
+const db = window.supabase.createClient(SB_URL, SB_KEY);
+
+let ME = null; // {id, email}
+let VIEW = 'dashboard';
+const cache = {};
+
+// ---------------------------------------------------------------- helpers
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return '—';
+  return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
+function fmtRel(iso){ if(!iso) return '—'; const ms=Date.now()-new Date(iso).getTime(); const m=Math.round(ms/60000);
+  if(m<1) return 'à l\'instant'; if(m<60) return 'il y a '+m+' min'; const h=Math.round(m/60); if(h<24) return 'il y a '+h+' h';
+  return 'il y a '+Math.round(h/24)+' j'; }
+function fmtEuro(n){ if(n==null) return '—'; return Number(n).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function fmtNum(n){ if(n==null) return '—'; return Number(n).toLocaleString('fr-FR'); }
+function fmtPct(n){ if(n==null) return 'Non disponible'; return n+' %'; }
+function nd(){ return '<span class="faint">Non disponible</span>'; }
+function tag(cls,label){ return `<span class="tag ${cls}">${esc(label)}</span>`; }
+
+async function rpc(name, args){
+  const { data, error } = await db.rpc(name, args||{});
+  if(error) throw error;
+  return data;
+}
+function toast(msg, ok){
+  const t=document.createElement('div'); t.className='toast '+(ok?'ok':'err'); t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(), 4200);
+}
+
+// ---------------------------------------------------------------- auth
+async function boot(){
+  const { data:{ session } } = await db.auth.getSession();
+  if(session){ await tryEnterAdmin(); } else { showLogin(); }
+}
+function showLogin(msg){
+  document.getElementById('login-screen').hidden=false;
+  document.getElementById('app').hidden=true;
+  const e=document.getElementById('login-err');
+  if(msg){ e.textContent=msg; e.hidden=false; } else { e.hidden=true; }
+}
+async function tryEnterAdmin(){
+  let isAdmin=false;
+  try{ isAdmin = await rpc('tml_est_admin'); }catch(e){ isAdmin=false; }
+  if(!isAdmin){
+    await db.auth.signOut();
+    showLogin('Ce compte n\'est pas administrateur.');
+    return;
+  }
+  const { data:{ user } } = await db.auth.getUser();
+  ME = { id:user.id, email:user.email };
+  document.getElementById('login-screen').hidden=true;
+  document.getElementById('app').hidden=false;
+  goto(location.hash.replace('#','') || 'dashboard');
+}
+document.getElementById('login-btn').addEventListener('click', async ()=>{
+  const email=document.getElementById('login-email').value.trim();
+  const pass=document.getElementById('login-pass').value;
+  const btn=document.getElementById('login-btn'); btn.disabled=true; btn.textContent='Connexion...';
+  try{
+    const { error } = await db.auth.signInWithPassword({ email, password: pass });
+    if(error) throw error;
+    await tryEnterAdmin();
+  }catch(e){
+    showLogin('Connexion refusée : identifiants incorrects.');
+  } finally { btn.disabled=false; btn.textContent='Se connecter'; }
+});
+document.getElementById('logout-link').addEventListener('click', async ()=>{
+  await db.auth.signOut(); ME=null; location.hash=''; showLogin();
+});
+
+// ---------------------------------------------------------------- routing
+window.addEventListener('hashchange', ()=>{ if(ME) goto(location.hash.replace('#','')||'dashboard'); });
+function goto(view){
+  VIEW=view; location.hash=view;
+  document.querySelectorAll('.navlink[data-view]').forEach(a=>a.classList.toggle('active', a.dataset.view===view));
+  render();
+}
+document.querySelectorAll('.navlink[data-view]').forEach(a=>a.addEventListener('click', ()=>goto(a.dataset.view)));
+
+function setMain(html){ document.getElementById('main').innerHTML = html; }
+function loadingMain(){ setMain('<div class="empty"><span class="spinner"></span> Chargement…</div>'); }
+
+async function render(){
+  try{
+    if(VIEW==='dashboard') await renderDashboard();
+    else if(VIEW==='joueurs') await renderJoueurs();
+    else if(VIEW==='ligues') await renderLigues();
+    else if(VIEW==='usage') await renderUsage();
+    else if(VIEW==='monetisation') await renderMonetisation();
+    else if(VIEW==='systeme') await renderSysteme();
+    else if(VIEW==='journal') await renderJournal();
+    else await renderDashboard();
+  }catch(e){
+    setMain(`<div class="card"><b>Erreur de chargement</b><div class="muted" style="margin-top:6px">${esc(e.message||e)}</div></div>`);
+  }
+}
+
+// ================================================================== DASHBOARD
+async function renderDashboard(){
+  loadingMain();
+  const [health, act7] = await Promise.all([ rpc('admin_bo_health'), rpc('admin_bo_usage_summary',{p_period:'7d'}) ]);
+  cache.health = health;
+
+  // ---- verdict global ----
+  const alerts = collectAlerts(health);
+  const level = alerts.some(a=>a.sev==='r') ? 'r' : (alerts.length ? 'o' : 'g');
+  const verdictTxt = level==='g' ? '🟢 Tout fonctionne normalement'
+    : level==='o' ? `🟠 ${alerts.length} point${alerts.length>1?'s':''} nécessite${alerts.length>1?'nt':''} ton attention`
+    : '🔴 Problème susceptible d\'empêcher les joueurs de jouer';
+
+  const jeu = health.jeu, matchs = health.matchs, api = health.api, integ = health.integrite, tech = health.technique;
+  const quota = api.quota_dernier_releve || {};
+
+  const cronsKo = (tech.crons||[]).filter(c=>c.dernier_statut && c.dernier_statut!=='succeeded');
+  const techLed = cronsKo.length ? 'r' : 'g';
+
+  const jeuLed = (jeu.ligues_bloquees.length || jeu.running_sans_progression.length) ? 'o' : 'g';
+  const matchLed = matchs.duels_sans_fixtures_journee_active>0 ? 'o' : 'g';
+  const apiLed = quota.remaining!=null ? (quota.remaining<50?'r':quota.remaining<150?'o':'g') : 'gray';
+  const integLed = integ.bet_log_erreurs_24h>0 || integ.ligues_resolve_lock_bloque>0 ? 'o' : 'g';
+
+  setMain(`
+    <div id="topbar"><h1>Dashboard</h1><div id="lastcheck">Dernière vérification : ${fmtDate(health.verifie_a)} <button class="btn small" id="refresh-btn" style="margin-left:8px">↻ Actualiser</button></div></div>
+    <div id="health-banner" class="${level}"><div class="big">TACTIZO ADMIN — ${verdictTxt}</div></div>
+
+    <div class="grid grid-5" style="margin-bottom:22px">
+      ${voyant('JEU', jeuLed, [
+        `${jeu.ligues_actives} ligue(s) active(s)`,
+        jeu.ligues_bloquees.length? `${jeu.ligues_bloquees.length} bloquée(s) (verrou > 15 min)` : 'Aucune ligue bloquée',
+        jeu.running_sans_progression.length? `${jeu.running_sans_progression.length} sans progression >7j` : 'Progression normale'
+      ])}
+      ${voyant('MATCHS', matchLed, [
+        `${matchs.duels_total_journee_active} duel(s) journée active`,
+        matchs.duels_sans_fixtures_journee_active>0 ? `⚠️ ${matchs.duels_sans_fixtures_journee_active} sans affiches` : 'Toutes les affiches présentes'
+      ])}
+      ${voyant('API', apiLed, quota.remaining!=null ? [
+        `${quota.remaining} crédits restants / ${quota.limit||500}`,
+        `${quota.used||'—'} utilisés ce mois`
+      ] : [nd()])}
+      ${voyant('INTÉGRITÉ', integLed, [
+        `Surveillance partielle`,
+        `${integ.bet_log_erreurs_24h} erreur(s) de pari (24h)`,
+        `${integ.ligues_resolve_lock_bloque} verrou(x) anormal(aux)`
+      ])}
+      ${voyant('TECHNIQUE', techLed, [
+        cronsKo.length ? `⚠️ ${cronsKo.length} cron(s) en échec` : `${(tech.crons||[]).length} crons OK`,
+      ])}
+    </div>
+
+    <div class="section-title">À traiter / à anticiper</div>
+    <div class="card" style="margin-bottom:22px">
+      ${alerts.length ? `<table>${alerts.map(a=>`<tr class="${a.href?'clickable':''}" ${a.href?`onclick="goto('${a.href}')"`:''}><td style="width:26px">${a.sev==='r'?'🔴':'🟠'}</td><td>${esc(a.text)}</td></tr>`).join('')}</table>`
+        : `<div class="empty">✓ Aucune action requise</div>`}
+    </div>
+
+    <div class="section-title">Activité — 7 derniers jours</div>
+    <div class="grid grid-5" style="margin-bottom:22px">
+      ${kpi(act7.joueurs_actifs, 'Joueurs actifs', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
+      ${kpi(act7.nouveaux_joueurs, 'Nouveaux joueurs')}
+      ${kpi(act7.ligues_actives, 'Ligues actives')}
+      ${kpi(act7.pronostics_enregistres, 'Pronostics enregistrés')}
+      ${kpi(act7.journees_resolues, 'Journées résolues')}
+    </div>
+    <div class="faint">Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
+  `);
+  document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
+}
+
+function collectAlerts(h){
+  const out=[];
+  (h.jeu.ligues_bloquees||[]).forEach(l=> out.push({sev:'r', text:`Ligue ${l.code} — resolve_lock bloqué depuis plus de 15 min`, href:'ligues'}));
+  (h.jeu.running_sans_progression||[]).forEach(l=> out.push({sev:'o', text:`Ligue ${l.code} — running sans progression depuis plus de 7 jours`, href:'ligues'}));
+  const q=h.api.quota_dernier_releve||{};
+  if(q.remaining!=null && q.remaining<50) out.push({sev:'r', text:`Quota The Odds API très bas : ${q.remaining} crédits restants`, href:'systeme'});
+  else if(q.remaining!=null && q.remaining<150) out.push({sev:'o', text:`Quota The Odds API à surveiller : ${q.remaining} crédits restants`, href:'systeme'});
+  if(h.matchs.duels_sans_fixtures_journee_active>0) out.push({sev:'o', text:`${h.matchs.duels_sans_fixtures_journee_active} duel(s) de la journée active sans affiches`, href:'ligues'});
+  const ko=(h.technique.crons||[]).filter(c=>c.dernier_statut && c.dernier_statut!=='succeeded');
+  ko.forEach(c=> out.push({sev:'r', text:`Cron "${c.job}" en échec (dernier statut : ${c.dernier_statut})`, href:'systeme'}));
+  if(h.integrite.bet_log_erreurs_24h>0) out.push({sev:'o', text:`${h.integrite.bet_log_erreurs_24h} erreur(s) de soumission de pari sur les dernières 24h`});
+  return out;
+}
+function voyant(title, led, lines){
+  return `<div class="voyant"><div class="head"><span class="led ${led}"></span>${title}</div><div class="lines">${lines.map(l=>`<div>${l}</div>`).join('')}</div></div>`;
+}
+function kpi(val, label, cmpHtml){
+  return `<div class="card kpi"><div class="v">${val==null?'—':fmtNum(val)}</div><div class="l">${label}</div>${cmpHtml||''}</div>`;
+}
+function cmp(now, prev){
+  if(prev==null || now==null) return '';
+  const d=now-prev; if(d===0) return `<div class="cmp muted">= période précédente</div>`;
+  return `<div class="cmp ${d>0?'up':'down'}">${d>0?'▲':'▼'} ${Math.abs(d)} vs période précédente</div>`;
+}
+
+// ================================================================== JOUEURS
+let joueursPage=1, joueursQuery='';
+async function renderJoueurs(){
+  loadingMain();
+  const res = await rpc('admin_bo_players_search', {p_query: joueursQuery||null, p_page: joueursPage, p_page_size: 25});
+  const totalPages = Math.max(1, Math.ceil(res.total/res.page_size));
+  setMain(`
+    <div id="topbar"><h1>Joueurs</h1><div class="faint">${res.total} compte(s)</div></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="row"><input type="text" id="j-search" placeholder="Rechercher par pseudo, email ou UID…" value="${esc(joueursQuery)}" style="max-width:360px">
+      <button class="btn" id="j-search-btn">Rechercher</button></div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>Email</th><th>Pseudo(s)</th><th>Créé le</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
+      <tbody>${res.rows.length? res.rows.map(r=>`
+        <tr class="clickable" onclick="openPlayer('${r.user_id}')">
+          <td>${esc(r.email)}</td>
+          <td>${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
+          <td>${fmtDate(r.created_at)}</td>
+          <td>${fmtRel(r.last_sign_in_at)}</td>
+          <td>${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
+        </tr>`).join('') : `<tr><td colspan="5"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
+      </tbody></table>
+      <div class="pager">
+        <button class="btn small" ${joueursPage<=1?'disabled':''} onclick="changeJoueursPage(-1)">← Précédent</button>
+        Page ${res.page} / ${totalPages}
+        <button class="btn small" ${joueursPage>=totalPages?'disabled':''} onclick="changeJoueursPage(1)">Suivant →</button>
+      </div>
+    </div>
+    <div id="player-detail-slot"></div>
+  `);
+  document.getElementById('j-search-btn').addEventListener('click', ()=>{ joueursQuery=document.getElementById('j-search').value.trim(); joueursPage=1; renderJoueurs(); });
+  document.getElementById('j-search').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('j-search-btn').click(); });
+}
+function changeJoueursPage(delta){ joueursPage=Math.max(1, joueursPage+delta); renderJoueurs(); }
+
+async function openPlayer(userId){
+  const slot = document.getElementById('player-detail-slot');
+  slot.innerHTML = `<div class="empty"><span class="spinner"></span> Chargement de la fiche…</div>`;
+  const d = await rpc('admin_bo_player_detail', {p_user_id:userId});
+  const c = d.compte;
+  slot.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div class="between"><h2>${esc(c.email)}</h2>${c.banned?tag('r','Banni'):tag('g','Actif')}</div>
+      <div class="faint" style="margin-bottom:14px">UID : ${c.user_id} · Créé le ${fmtDate(c.created_at)} · Dernière connexion ${fmtRel(c.last_sign_in_at)}</div>
+
+      <div class="section-title">Ligues</div>
+      <table><thead><tr><th>Ligue</th><th>Statut</th><th>Capital</th><th>Points</th></tr></thead>
+      <tbody>${d.ligues.length? d.ligues.map(l=>`<tr><td>${esc(l.league_name)} (${esc(l.league_code)})</td><td>${esc(l.league_status)}</td><td>${fmtEuro(l.capital)}</td><td>${l.points}</td></tr>`).join('')
+        : `<tr><td colspan="4" class="faint">Aucune ligue rejointe.</td></tr>`}</tbody></table>
+
+      <div class="section-title">Entitlements</div>
+      <div class="hstack" style="margin-bottom:6px">${d.entitlements.length? d.entitlements.map(e=>tag('b', e.opt+(e.expires_at?(' → '+fmtDate(e.expires_at)):' (permanent)'))).join('') : '<span class="faint">Aucun</span>'}</div>
+
+      <div class="section-title">Points Tactizo</div>
+      <div class="hstack">${kpi(d.points.solde,'Solde')}${kpi(d.points.en_validation,'En validation')}${kpi(d.points.geles,'Gelés')}</div>
+
+      <div class="section-title">Appareils</div>
+      <div class="hstack" style="margin-bottom:6px">${d.appareils.length? d.appareils.map(a=>tag(a.active?'g':'n', a.platform+(a.active?'':' (inactif)'))).join('') : '<span class="faint">Aucun</span>'}</div>
+
+      <div class="section-title">Actions administratives</div>
+      <div class="hstack">
+        <button class="btn" onclick="actionSetBlocked('${c.user_id}', ${!c.banned})">${c.banned?'Débannir':'Bannir'}</button>
+        <button class="btn" onclick="actionSetPassword('${c.user_id}')">Réinitialiser le mot de passe</button>
+        <button class="btn" onclick="actionSetOptions('${c.user_id}', ${JSON.stringify((d.entitlements||[]).map(e=>e.opt))})">Modifier les entitlements</button>
+        <button class="btn" onclick="actionAdjustPoints('${esc(c.email)}')">Ajuster les Points</button>
+        <button class="btn danger" onclick="actionDeleteUser('${c.user_id}','${esc(c.email)}')">Supprimer le compte</button>
+      </div>
+    </div>`;
+}
+
+// ================================================================== LIGUES
+let liguesPage=1, liguesQuery='', liguesStatus='', liguesMode='';
+async function renderLigues(){
+  loadingMain();
+  const res = await rpc('admin_bo_leagues_list', {p_query:liguesQuery||null, p_status:liguesStatus||null, p_data_mode:liguesMode||null, p_page:liguesPage, p_page_size:25});
+  const totalPages = Math.max(1, Math.ceil(res.total/res.page_size));
+  setMain(`
+    <div id="topbar"><h1>Ligues</h1><div class="faint">${res.total} ligue(s)</div></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="hstack">
+        <input type="text" id="l-search" placeholder="Code ou nom…" value="${esc(liguesQuery)}" style="max-width:220px">
+        <select id="l-status"><option value="">Tous statuts</option>
+          ${['prep','running','truce','done'].map(s=>`<option value="${s}" ${liguesStatus===s?'selected':''}>${s}</option>`).join('')}</select>
+        <select id="l-mode"><option value="">Réel/simulé (tous)</option>
+          <option value="real" ${liguesMode==='real'?'selected':''}>Réel</option>
+          <option value="sim" ${liguesMode==='sim'?'selected':''}>Simulé</option></select>
+        <button class="btn" id="l-search-btn">Filtrer</button>
+      </div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>Code</th><th>Nom</th><th>Statut</th><th>Journée</th><th>Joueurs</th><th>Mode</th><th>Anomalies</th></tr></thead>
+      <tbody>${res.rows.length? res.rows.map(l=>`
+        <tr class="clickable" onclick="openLeague('${l.id}')">
+          <td class="mono">${esc(l.code)}</td><td>${esc(l.name)}</td><td>${esc(l.status)}</td>
+          <td>${l.current_day}/${l.num_days}</td><td>${l.nb_joueurs}</td><td>${esc(l.data_mode)}/${esc(l.engine||'')}</td>
+          <td>${l.resolve_lock_bloque?tag('r','verrou bloqué'):''} ${l.sans_progression?tag('o','sans progression'):''} ${l.reviewer_gelee?tag('b','Reviewer gelée'):''}</td>
+        </tr>`).join('') : `<tr><td colspan="7"><div class="empty">Aucune ligue ne correspond.</div></td></tr>`}
+      </tbody></table>
+      <div class="pager">
+        <button class="btn small" ${liguesPage<=1?'disabled':''} onclick="changeLiguesPage(-1)">← Précédent</button>
+        Page ${res.page} / ${totalPages}
+        <button class="btn small" ${liguesPage>=totalPages?'disabled':''} onclick="changeLiguesPage(1)">Suivant →</button>
+      </div>
+    </div>
+    <div id="league-detail-slot"></div>
+  `);
+  document.getElementById('l-search-btn').addEventListener('click', ()=>{
+    liguesQuery=document.getElementById('l-search').value.trim();
+    liguesStatus=document.getElementById('l-status').value;
+    liguesMode=document.getElementById('l-mode').value;
+    liguesPage=1; renderLigues();
+  });
+}
+function changeLiguesPage(delta){ liguesPage=Math.max(1, liguesPage+delta); renderLigues(); }
+
+async function openLeague(id){
+  const slot=document.getElementById('league-detail-slot');
+  slot.innerHTML=`<div class="empty"><span class="spinner"></span> Chargement…</div>`;
+  const d = await rpc('admin_bo_league_detail', {p_league_id:id});
+  const L=d.league;
+  slot.innerHTML=`
+    <div class="card" style="margin-top:16px">
+      <div class="between"><h2>${esc(L.name)} — ${esc(L.code)}</h2>
+        <div class="hstack">${L.resolve_lock?tag('r','resolve_lock actif'):''}${L.frozen_for_user_id && !L.day_started_at?tag('b','Reviewer gelée'):''}</div></div>
+      <div class="faint" style="margin-bottom:14px">${esc(L.status)} · journée ${L.current_day}/${L.num_days} · ${esc(L.data_mode)}/${esc(L.engine||'')} · créée le ${fmtDate(L.created_at)}</div>
+
+      <div class="section-title">Joueurs</div>
+      <table><thead><tr><th>Nom</th><th>Capital</th><th>Points</th><th></th></tr></thead>
+      <tbody>${d.players.map(p=>`<tr><td>${esc(p.name)}${p.is_ai?' 🤖':''}${p.is_organizer?' 👑':''}</td><td>${fmtEuro(p.capital)}</td><td>${p.points}</td><td>${p.user_id?`<button class="btn small" onclick="goto('joueurs');setTimeout(()=>openPlayer('${p.user_id}'),400)">Voir fiche</button>`:''}</td></tr>`).join('')}</tbody></table>
+
+      <div class="section-title">Duels / journées</div>
+      <table><thead><tr><th>Jour</th><th>Affiches</th><th>Résolu</th><th>Date résolution</th></tr></thead>
+      <tbody>${d.duels.map(du=>`<tr><td>${du.day+1}</td><td>${du.nb_fixtures}</td><td>${du.resolved?'✓':'—'}</td><td>${fmtDate(du.resolved_at)}</td></tr>`).join('')}</tbody></table>
+    </div>`;
+}
+
+// ================================================================== USAGE
+let usagePeriod='7d';
+async function renderUsage(){
+  loadingMain();
+  const [sum, det] = await Promise.all([ rpc('admin_bo_usage_summary',{p_period:usagePeriod}), rpc('admin_bo_usage_detail') ]);
+  const ret = await rpc('admin_bo_retention');
+  setMain(`
+    <div id="topbar"><h1>Usage</h1></div>
+    <div class="hstack" style="margin-bottom:16px">
+      ${['today','7d','30d'].map(p=>`<button class="btn small ${usagePeriod===p?'primary':''}" onclick="setUsagePeriod('${p}')">${p==='today'?"Aujourd'hui":p==='7d'?'7 jours':'30 jours'}</button>`).join('')}
+    </div>
+    <div class="grid grid-5" style="margin-bottom:22px">
+      ${kpi(sum.joueurs_actifs,'Joueurs actifs', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
+      ${kpi(sum.nouveaux_joueurs,'Nouveaux joueurs')}
+      ${kpi(sum.ligues_actives,'Ligues actives')}
+      ${kpi(sum.pronostics_enregistres,'Pronostics enregistrés')}
+      ${kpi(sum.journees_resolues,'Journées résolues')}
+    </div>
+
+    <div class="section-title">Engagement / rétention</div>
+    <div class="card" style="margin-bottom:22px">
+      <div class="faint" style="margin-bottom:10px">${esc(ret.definition_inactif)}</div>
+      <div class="grid grid-5">
+        ${kpi(ret.joueurs_inactifs_ligue_active,'Inactifs (ligue active)')}
+        ${kpi(ret.comptes_jamais_rejoint_ligue,'Comptes jamais rejoint')}
+        ${kpi(ret.joueurs_rejoint_jamais_paries,'Rejoint, jamais parié')}
+        ${kpi(ret.comptes_supprimes_total,'Comptes supprimés')}
+        <div class="card kpi"><div class="v">${ret.retention_7j!=null? ret.retention_7j+' %' : nd()}</div><div class="l">Rétention 7 jours</div>${ret.retention_7j_note?`<div class="faint">${esc(ret.retention_7j_note)}</div>`:''}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Joueurs les plus actifs</div>
+    <div class="card" style="margin-bottom:22px">
+      <table><thead><tr><th>Joueur</th><th>Pronostics</th></tr></thead>
+      <tbody>${det.joueurs_plus_actifs.length? det.joueurs_plus_actifs.map(j=>`<tr><td>${esc(j.nom)}</td><td>${j.pronostics}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Pas encore assez de données.</td></tr>`}</tbody></table>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:22px">
+      <div class="card">
+        <div class="section-title" style="margin-top:0">Ligues les plus actives</div>
+        <table><thead><tr><th>Ligue</th><th>Pronostics</th></tr></thead>
+        <tbody>${det.ligues_plus_actives.length? det.ligues_plus_actives.map(l=>`<tr><td>${esc(l.name)} (${esc(l.code)})</td><td>${l.pronostics}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">—</td></tr>`}</tbody></table>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-top:0">Bonus les plus utilisés</div>
+        <table><thead><tr><th>Bonus</th><th>Utilisations</th></tr></thead>
+        <tbody>${det.bonus_plus_utilises.length? det.bonus_plus_utilises.map(b=>`<tr><td>${esc(b.bonus_id)}</td><td>${b.utilisations}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">—</td></tr>`}</tbody></table>
+        <div class="faint" style="margin-top:6px">${esc(det.bonus_moins_utilises_note)}</div>
+      </div>
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:22px">
+      ${kpi(det.mise_moyenne!=null? fmtEuro(det.mise_moyenne) : null, 'Mise moyenne')}
+      ${kpi(det.taux_utilisation_capitaine!=null? det.taux_utilisation_capitaine+' %' : null, 'Utilisation Capitaine')}
+      ${kpi(det.taux_participation_journees!=null? det.taux_participation_journees+' %' : null, 'Taux de participation aux journées')}
+    </div>
+
+    <div class="grid grid-3" style="margin-bottom:22px">
+      <div class="card"><div class="section-title" style="margin-top:0">Solo vs Entre amis</div>
+        <div class="faint" style="margin-bottom:6px">${esc(det.solo_vs_amis_definition)}</div>
+        ${tag('n','Solo : '+det.solo_vs_amis.solo)} ${tag('n','Entre amis : '+det.solo_vs_amis.entre_amis)}</div>
+      <div class="card"><div class="section-title" style="margin-top:0">Réel vs Simulé</div>
+        ${Object.entries(det.reel_vs_simule||{}).map(([k,v])=>tag('n',k+' : '+v)).join(' ')||nd()}</div>
+      <div class="card"><div class="section-title" style="margin-top:0">Répartition formule</div>
+        ${Object.entries(det.repartition_formule||{}).map(([k,v])=>tag('n',(k||'—')+' : '+v)).join(' ')||nd()}</div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:22px">
+      <div class="card"><div class="section-title" style="margin-top:0">Langue</div>
+        <div class="faint" style="margin-bottom:6px">${esc(det.langue_note)}</div>
+        ${Object.entries(det.langue_repartition||{}).map(([k,v])=>tag('n',(k||'—')+' : '+v)).join(' ')||nd()}</div>
+      <div class="card"><div class="section-title" style="margin-top:0">Régularité des joueurs</div>
+        <div class="faint" style="margin-bottom:6px">${esc(det.definition_regularite)}</div>
+        ${tag('g','Réguliers : '+det.joueurs_par_regularite.reguliers_8plus_30j)} ${tag('o','Irréguliers : '+det.joueurs_par_regularite.irreguliers_1a7_30j)} ${tag('r','Quasi-inactifs : '+det.joueurs_par_regularite.quasi_inactifs_0_30j)}</div>
+    </div>
+
+    <div class="section-title">Classement global (Tactizo Rating)</div>
+    <div class="card">
+      <div class="empty">Emplacement réservé pour un futur classement global (meilleurs joueurs actifs / All Time).<br>
+      Aucune formule de rating n'a été définie pour l'instant — cette page attend une décision produit avant d'afficher un classement officiel.</div>
+    </div>
+  `);
+}
+function setUsagePeriod(p){ usagePeriod=p; renderUsage(); }
+
+// ================================================================== MONÉTISATION
+async function renderMonetisation(){
+  loadingMain();
+  const m = await rpc('admin_bo_monetization_summary');
+  setMain(`
+    <div id="topbar"><h1>Monétisation</h1></div>
+    ${m.mode_test ? `<div id="health-banner" class="o"><div class="big">🧪 MODE TEST — les paiements réels sont désactivés (phase_test=true). Les joueurs obtiennent les options gratuitement.</div></div>` : `<div id="health-banner" class="g"><div class="big">Paiements réels actifs</div></div>`}
+    ${m.mode_test_indetermine? `<div class="faint" style="margin-bottom:14px">⚠️ Statut phase_test non lisible automatiquement (table app_config) — statut par défaut supposé « test » par prudence.</div>`:''}
+
+    <div class="section-title">Offres</div>
+    <div class="card" style="margin-bottom:22px">
+      <div class="faint" style="margin-bottom:10px">Catalogue connu (Joueur IA, Bonus complets, Trêve, Rachat, Duel Live, Stats avancées, pack Tactizo Premium — ${fmtEuro(m.pack_premium_prix_eur)}). Comptes actifs par option ci-dessous, calculés depuis <span class="mono">entitlements</span> :</div>
+      <table><thead><tr><th>Option</th><th>Comptes actifs</th></tr></thead>
+      <tbody>${Object.keys(m.entitlements_actifs_par_option||{}).length? Object.entries(m.entitlements_actifs_par_option).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Aucun entitlement actif actuellement.</td></tr>`}</tbody></table>
+      <div class="faint" style="margin-top:8px">${m.joueurs_avec_entitlement} joueur(s) au total avec au moins une option active.</div>
+    </div>
+
+    <div class="section-title">Points Tactizo</div>
+    <div class="grid grid-3" style="margin-bottom:22px">
+      ${kpi(m.points.en_circulation,'En circulation')}
+      ${kpi(m.points.credites_total,'Crédités (total historique)')}
+      ${kpi(m.points.depenses_total,'Dépensés (total historique)')}
+    </div>
+
+    <div class="section-title">Parrainages</div>
+    <div class="grid grid-2" style="margin-bottom:22px">
+      ${kpi(m.parrainages.total_credits_parrainage,'Crédits liés à un parrainage')}
+      ${kpi(m.parrainages.comptes_supprimes_avec_parrainage,'Comptes supprimés ayant été parrainés')}
+    </div>
+
+    <div class="between section-title"><span>Codes promo</span><button class="btn small" onclick="actionCreatePromoCode()">+ Créer un code</button></div>
+    <div class="card" style="margin-bottom:22px">
+      <table><thead><tr><th>Code</th><th>Actif</th><th>Durée</th><th>Utilisations</th><th>Créé le</th><th></th></tr></thead>
+      <tbody>${m.codes_promo.length? m.codes_promo.map(c=>`
+        <tr><td class="mono">${esc(c.code)}</td><td>${c.actif?tag('g','actif'):tag('n','inactif')}</td><td>${c.duree_j} j</td><td>${c.utilisations}</td><td>${fmtDate(c.created_at)}</td>
+        <td><button class="btn small" onclick="actionTogglePromo('${esc(c.code)}', ${!c.actif})">${c.actif?'Désactiver':'Activer'}</button>
+        <button class="btn small danger" onclick="actionDeletePromo('${esc(c.code)}')">Supprimer</button></td></tr>`).join('')
+        : `<tr><td colspan="6"><div class="empty">Aucun code promo configuré.</div></td></tr>`}</tbody></table>
+    </div>
+
+    <div class="section-title">Finance (production)</div>
+    <div class="card">
+      <div class="empty">CA, ventes, panier moyen, taux de conversion et répartition Stripe/RevenueCat s'afficheront ici automatiquement dès que les paiements réels seront activés. Aucune donnée fictive n'est affichée tant que <span class="mono">phase_test</span> reste actif.</div>
+    </div>
+  `);
+}
+
+// ================================================================== SYSTÈME
+async function renderSysteme(){
+  loadingMain();
+  const s = await rpc('admin_bo_system_status');
+  const quota = s.api_odds_quota || {};
+  setMain(`
+    <div id="topbar"><h1>Système</h1></div>
+
+    <div class="section-title">Crons planifiés (pg_cron, en direct)</div>
+    <div class="card" style="margin-bottom:22px">
+      <table><thead><tr><th>Job</th><th>Planification</th><th>Actif</th><th>Dernier statut</th><th>Dernière exécution</th></tr></thead>
+      <tbody>${s.crons.map(c=>`<tr><td class="mono">${esc(c.job)}</td><td class="mono">${esc(c.schedule)}</td><td>${c.actif?tag('g','oui'):tag('r','non')}</td>
+        <td>${c.dernier_statut==='succeeded'?tag('g','succeeded'):tag('r',c.dernier_statut||'inconnu')}</td><td>${fmtRel(c.derniere_execution)}</td></tr>`).join('')}</tbody></table>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom:22px">
+      <div class="card">
+        <div class="section-title" style="margin-top:0">The Odds API</div>
+        ${quota.remaining!=null ? `<div class="grid grid-2">${kpi(quota.remaining,'Crédits restants')}${kpi(quota.used,'Utilisés ce mois')}</div>` : `<div class="empty">${nd()}</div>`}
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-top:0">Notifications push</div>
+        <div class="grid grid-3">${kpi(s.notifications_push.appareils_actifs,'Appareils actifs')}${kpi(s.notifications_push.appareils_ios,'iOS')}${kpi(s.notifications_push.appareils_android,'Android')}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Échéances</div>
+    <div class="card" style="margin-bottom:22px">
+      <table><thead><tr><th>Échéance</th><th>Catégorie</th><th>Date</th><th>Auto</th><th>Action requise</th></tr></thead>
+      <tbody>${s.echeances.map(e=>{
+        const days = e.date_echeance ? Math.round((new Date(e.date_echeance)-new Date())/86400000) : null;
+        const urgent = days!=null && days<90;
+        return `<tr><td>${esc(e.libelle)}</td><td>${esc(e.categorie)}</td><td>${e.date_echeance||'—'}${days!=null?` <span class="${urgent?'tag o':'faint'}" ${urgent?'':'style="background:none"'}>${days>=0?('J-'+days):'dépassée'}</span>`:''}</td><td>${e.automatique?tag('g','auto'):tag('o','manuelle')}</td><td class="faint">${esc(e.action_requise||'—')}</td></tr>`;
+      }).join('')}</tbody></table>
+    </div>
+
+    <div class="section-title">Signalements récents</div>
+    <div class="card">
+      <table><thead><tr><th>#</th><th>Type</th><th>Statut</th><th>Ligue</th><th>Version</th><th>Reçu</th></tr></thead>
+      <tbody>${s.signalements_recents.length? s.signalements_recents.map(r=>`<tr><td>${r.num}</td><td>${esc(r.kind)}</td><td>${esc(r.status)}</td><td>${esc(r.league_code||'—')}</td><td>${esc(r.app_version||'—')}</td><td>${fmtRel(r.created_at)}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">Aucun signalement récent.</div></td></tr>`}</tbody></table>
+    </div>
+  `);
+}
+
+// ================================================================== JOURNAL ADMIN
+async function renderJournal(){
+  loadingMain();
+  const { data, error } = await db.from('audit_log').select('*').order('created_at',{ascending:false}).limit(100);
+  if(error) throw error;
+  setMain(`
+    <div id="topbar"><h1>Journal admin</h1><div class="faint">100 dernières actions</div></div>
+    <div class="card">
+      <table><thead><tr><th>Date</th><th>Action</th><th>Cible</th><th>Motif</th></tr></thead>
+      <tbody>${data.length? data.map(a=>`<tr><td>${fmtDate(a.created_at)}</td><td class="mono">${esc(a.action)}</td><td>${esc(a.target_type||'')} ${esc(a.target_id||'')}</td><td>${esc(a.reason||'—')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">Aucune action journalisée pour l'instant.</div></td></tr>`}</tbody></table>
+    </div>
+  `);
+}
+
+// ================================================================== actions sensibles (confirmation + mot de passe + audit)
+function askAdminAction(title, fields, onConfirm){
+  const ov=document.createElement('div'); ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal"><h3>${esc(title)}</h3>
+    ${fields.map(f=>`<div class="field"><label>${esc(f.label)}</label><input type="${f.type||'text'}" id="mf-${f.id}" ${f.value?('value="'+esc(f.value)+'"'):''}></div>`).join('')}
+    <div class="field"><label>Mot de passe admin (confirmation)</label><input type="password" id="mf-pass"></div>
+    <div class="field"><label>Motif (facultatif, conservé dans le journal)</label><input type="text" id="mf-reason"></div>
+    <div class="hstack" style="justify-content:flex-end"><button class="btn" id="mf-cancel">Annuler</button><button class="btn danger" id="mf-ok">Confirmer</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#mf-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#mf-ok').onclick=async ()=>{
+    const vals={}; fields.forEach(f=> vals[f.id]=document.getElementById('mf-'+f.id).value);
+    const pass=document.getElementById('mf-pass').value;
+    const reason=document.getElementById('mf-reason').value||null;
+    if(!pass){ toast('Mot de passe requis.', false); return; }
+    const btn=ov.querySelector('#mf-ok'); btn.disabled=true; btn.textContent='En cours…';
+    try{ await onConfirm(vals, pass, reason); ov.remove(); }
+    catch(e){ toast('Échec : '+(e.message||e), false); btn.disabled=false; btn.textContent='Confirmer'; }
+  };
+}
+
+function actionSetBlocked(userId, blocked){
+  askAdminAction(blocked?'Bannir ce compte':'Débannir ce compte', [], async (v,pass,reason)=>{
+    await rpc('admin_bo_set_blocked', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_blocked:blocked, p_reason:reason});
+    toast(blocked?'Compte banni.':'Compte débanni.', true); openPlayer(userId);
+  });
+}
+function actionSetPassword(userId){
+  askAdminAction('Réinitialiser le mot de passe', [{id:'newpass', label:'Nouveau mot de passe', type:'password'}], async (v,pass,reason)=>{
+    if(!v.newpass || v.newpass.length<6){ throw new Error('Nouveau mot de passe trop court (6 caractères minimum).'); }
+    await rpc('admin_bo_set_password', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_new_password:v.newpass, p_reason:reason});
+    toast('Mot de passe réinitialisé.', true);
+  });
+}
+function actionSetOptions(userId, current){
+  askAdminAction('Modifier les entitlements (séparés par des virgules)', [{id:'opts', label:'Options', value:(current||[]).join(', ')}], async (v,pass,reason)=>{
+    const opts = v.opts.split(',').map(s=>s.trim()).filter(Boolean);
+    await rpc('admin_bo_set_options', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_options:opts, p_reason:reason});
+    toast('Entitlements mis à jour.', true); openPlayer(userId);
+  });
+}
+function actionAdjustPoints(email){
+  askAdminAction('Ajuster les Points Tactizo', [{id:'amount', label:'Montant (négatif pour retirer)', type:'number'}], async (v,pass,reason)=>{
+    const amount=parseInt(v.amount,10); if(!amount){ throw new Error('Montant invalide.'); }
+    await rpc('admin_bo_adjust_points', {p_admin_id:ME.id, p_admin_password:pass, p_user_email:email, p_amount:amount, p_reason:reason||'Ajustement admin'});
+    toast('Points ajustés.', true);
+  });
+}
+function actionDeleteUser(userId, email){
+  askAdminAction('⚠️ Supprimer définitivement ce compte ('+email+')', [], async (v,pass,reason)=>{
+    await rpc('admin_bo_delete_user', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_reason:reason});
+    toast('Compte supprimé.', true); renderJoueurs();
+  });
+}
+function actionCreatePromoCode(){
+  askAdminAction('Créer un code promo', [
+    {id:'code', label:'Code'}, {id:'note', label:'Note (facultatif)'}, {id:'duree', label:'Durée (jours)', type:'number', value:'30'}
+  ], async (v,pass,reason)=>{
+    if(!v.code) throw new Error('Code requis.');
+    await rpc('admin_bo_create_promo_code', {p_admin_id:ME.id, p_admin_password:pass, p_code:v.code.toUpperCase(), p_note:v.note||null, p_duree_j:parseInt(v.duree,10)||30, p_opts:null});
+    toast('Code promo créé.', true); renderMonetisation();
+  });
+}
+function actionTogglePromo(code, activate){
+  askAdminAction((activate?'Activer':'Désactiver')+' le code '+code, [], async (v,pass,reason)=>{
+    await rpc('admin_bo_set_promo_active', {p_admin_id:ME.id, p_admin_password:pass, p_code:code, p_actif:activate});
+    toast('Code mis à jour.', true); renderMonetisation();
+  });
+}
+function actionDeletePromo(code){
+  askAdminAction('⚠️ Supprimer le code '+code, [], async (v,pass,reason)=>{
+    await rpc('admin_bo_delete_promo_code', {p_admin_id:ME.id, p_admin_password:pass, p_code:code});
+    toast('Code supprimé.', true); renderMonetisation();
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
