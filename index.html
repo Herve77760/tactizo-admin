@@ -377,14 +377,17 @@ async function renderDashboard(){
     </div>
 
     <div class="section-title">Activité — 7 derniers jours</div>
-    <div class="grid grid-5" style="margin-bottom:22px">
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${kpi(act7.nouveaux_comptes, 'Nouveaux comptes')}
+      ${kpi(act7.utilisateurs_actifs, 'Utilisateurs actifs')}
       ${kpi(act7.joueurs_actifs, 'Joueurs actifs', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
-      ${kpi(act7.nouveaux_joueurs, 'Nouveaux joueurs')}
+    </div>
+    <div class="grid grid-3" style="margin-bottom:22px">
       ${kpi(act7.ligues_actives, 'Ligues actives')}
       ${kpi(act7.pronostics_enregistres, 'Pronostics enregistrés')}
       ${kpi(act7.journees_resolues, 'Journées résolues')}
     </div>
-    <div class="faint">Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
+    <div class="faint">Comptes techniques/démo/reviewer exclus de ces chiffres. Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
   `);
   document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
 }
@@ -457,8 +460,8 @@ async function openPlayer(userId){
   const c = d.compte;
   slot.innerHTML = `
     <div class="card" style="margin-top:16px">
-      <div class="between"><h2>${esc(c.email)}</h2>${c.banned?tag('r','Banni'):tag('g','Actif')}</div>
-      <div class="faint" style="margin-bottom:14px">UID : ${c.user_id} · Créé le ${fmtDate(c.created_at)} · Dernière connexion ${fmtRel(c.last_sign_in_at)}</div>
+      <div class="between"><h2>${esc(c.email)}</h2><div class="hstack">${c.banned?tag('r','Banni'):tag('g','Actif')}${c.is_analytics_excluded?tag('n','Exclu des analytics'):''}</div></div>
+      <div class="faint" style="margin-bottom:14px">UID : ${c.user_id} · Créé le ${fmtDate(c.created_at)} · Dernière connexion ${fmtRel(c.last_sign_in_at)}${c.is_analytics_excluded?' · Motif exclusion : '+esc(c.analytics_exclusion_reason||'—'):''}</div>
 
       <div class="section-title">Ligues</div>
       <table><thead><tr><th>Ligue</th><th>Statut</th><th>Capital</th><th>Points</th></tr></thead>
@@ -480,8 +483,10 @@ async function openPlayer(userId){
         <button class="btn" onclick="actionSetPassword('${c.user_id}')">Réinitialiser le mot de passe</button>
         <button class="btn" onclick="actionSetOptions('${c.user_id}', ${JSON.stringify((d.entitlements||[]).map(e=>e.opt))})">Modifier les entitlements</button>
         <button class="btn" onclick="actionAdjustPoints('${esc(c.email)}')">Ajuster les Points</button>
+        <button class="btn" onclick="actionSetAnalyticsExcluded('${c.user_id}', ${!c.is_analytics_excluded})">${c.is_analytics_excluded?'Réintégrer aux analytics':'Exclure des analytics'}</button>
         <button class="btn danger" onclick="actionDeleteUser('${c.user_id}','${esc(c.email)}')">Supprimer le compte</button>
       </div>
+      <div class="faint" style="margin-top:8px">« Exclure des analytics » retire ce compte des statistiques (Dashboard, Usage, Rétention, Monétisation) sans le masquer ni limiter son usage réel de l'app.</div>
     </div>`;
 }
 
@@ -607,13 +612,17 @@ async function renderUsage(){
     <div class="hstack" style="margin-bottom:16px">
       ${['today','7d','30d'].map(p=>`<button class="btn small ${usagePeriod===p?'primary':''}" onclick="setUsagePeriod('${p}')">${p==='today'?"Aujourd'hui":p==='7d'?'7 jours':'30 jours'}</button>`).join('')}
     </div>
-    <div class="grid grid-5" style="margin-bottom:22px">
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${kpi(sum.nouveaux_comptes,'Nouveaux comptes')}
+      ${kpi(sum.utilisateurs_actifs,'Utilisateurs actifs')}
       ${kpi(sum.joueurs_actifs,'Joueurs actifs', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
-      ${kpi(sum.nouveaux_joueurs,'Nouveaux joueurs')}
+    </div>
+    <div class="grid grid-3" style="margin-bottom:22px">
       ${kpi(sum.ligues_actives,'Ligues actives')}
       ${kpi(sum.pronostics_enregistres,'Pronostics enregistrés')}
       ${kpi(sum.journees_resolues,'Journées résolues')}
     </div>
+    <div class="faint" style="margin-bottom:22px">Nouveaux comptes : comptes Tactizo créés pendant la période. Utilisateurs actifs : ${esc(sum.utilisateurs_actifs_definition||'')} Joueurs actifs : ont réellement soumis au moins un pronostic pendant la période. Comptes techniques/démo/reviewer exclus de tous ces chiffres.</div>
 
     <div class="section-title">Engagement / rétention</div>
     <div class="card" style="margin-bottom:22px">
@@ -812,6 +821,12 @@ function actionSetBlocked(userId, blocked){
   askAdminAction(blocked?'Bannir ce compte':'Débannir ce compte', [], async (v,pass,reason)=>{
     await rpc('admin_bo_set_blocked', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_blocked:blocked, p_reason:reason});
     toast(blocked?'Compte banni.':'Compte débanni.', true); openPlayer(userId);
+  });
+}
+function actionSetAnalyticsExcluded(userId, excluded){
+  askAdminAction(excluded?'Exclure ce compte des analytics':'Réintégrer ce compte aux analytics', [], async (v,pass,reason)=>{
+    await rpc('admin_bo_set_analytics_excluded', {p_admin_id:ME.id, p_admin_password:pass, p_target_id:userId, p_excluded:excluded, p_reason:reason});
+    toast(excluded?'Compte exclu des analytics.':'Compte réintégré aux analytics.', true); openPlayer(userId);
   });
 }
 function actionSetPassword(userId){
