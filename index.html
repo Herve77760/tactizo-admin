@@ -120,6 +120,55 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
   border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 [hidden]{display:none!important}
+
+/* ---------- mobile topbar / drawer nav ---------- */
+#mobile-topbar{display:none}
+#sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(20,20,30,.45);z-index:140}
+#sidebar-overlay.show{display:block}
+
+@media (max-width:880px){
+  #mobile-topbar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--panel);
+    border-bottom:1px solid var(--border);position:sticky;top:0;z-index:120}
+  #hamburger-btn{background:#fff;border:1px solid var(--border);border-radius:8px;width:40px;height:40px;
+    font-size:18px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  #mobile-title{font-weight:800;font-size:16px}
+  #app{flex-direction:column}
+  #sidebar{position:fixed;top:0;left:-260px;width:240px;height:100vh;z-index:150;transition:left .25s ease}
+  #sidebar.open{left:0;box-shadow:8px 0 30px rgba(0,0,0,.25)}
+  #main{padding:16px 14px 40px;max-width:100%}
+  #topbar{flex-wrap:wrap;gap:8px}
+}
+
+/* ---------- small-screen scaling ---------- */
+@media (max-width:680px){
+  .grid-5,.grid-3,.grid-2{grid-template-columns:1fr}
+}
+@media (max-width:880px){
+  .btn{min-height:40px;padding:9px 14px}
+  .btn.small{min-height:34px;padding:6px 12px}
+  input[type=text],input[type=password],input[type=number],input[type=email],select{font-size:16px;min-height:40px}
+  .row,.hstack{flex-wrap:wrap}
+}
+@media (max-width:480px){
+  .toast{left:20px;right:20px;max-width:none;text-align:center}
+}
+
+/* ---------- responsive tables : cards on mobile ---------- */
+@media (max-width:720px){
+  table:not(.plain){display:block}
+  table:not(.plain) thead{display:none}
+  table:not(.plain) tbody{display:block}
+  table:not(.plain) tr{display:block;border:1px solid var(--border);border-radius:10px;
+    margin-bottom:10px;padding:10px 12px;background:var(--panel2)}
+  table:not(.plain) tr:last-child{margin-bottom:0}
+  table:not(.plain) td{display:flex;justify-content:space-between;gap:10px;border:none;
+    padding:4px 0;text-align:right}
+  table:not(.plain) td::before{content:attr(data-label);color:var(--muted);font-weight:600;
+    font-size:11px;text-transform:uppercase;letter-spacing:.03em;text-align:left}
+  table:not(.plain) td:first-child{display:block;text-align:left;font-weight:700;font-size:14.5px;
+    border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:4px}
+  table.plain td{padding:8px 6px;vertical-align:top}
+}
 </style>
 </head>
 <body>
@@ -136,6 +185,11 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
 </div>
 
 <div id="app" hidden>
+  <div id="mobile-topbar">
+    <button class="btn" id="hamburger-btn" aria-label="Menu">☰</button>
+    <div id="mobile-title">TACTIZO <span style="color:var(--gold)">Admin</span></div>
+  </div>
+  <div id="sidebar-overlay"></div>
   <div id="sidebar">
     <div id="logo"><span class="dot"></span>TACTIZO <span style="font-weight:400;color:var(--muted)">Admin</span></div>
     <a class="navlink" data-view="dashboard">🏠 Dashboard</a>
@@ -233,7 +287,18 @@ function goto(view){
   document.querySelectorAll('.navlink[data-view]').forEach(a=>a.classList.toggle('active', a.dataset.view===view));
   render();
 }
-document.querySelectorAll('.navlink[data-view]').forEach(a=>a.addEventListener('click', ()=>goto(a.dataset.view)));
+document.querySelectorAll('.navlink[data-view]').forEach(a=>a.addEventListener('click', ()=>{ goto(a.dataset.view); closeDrawer(); }));
+
+// ---------------------------------------------------------------- mobile drawer nav
+const sidebarEl = document.getElementById('sidebar');
+const sidebarOverlayEl = document.getElementById('sidebar-overlay');
+function openDrawer(){ sidebarEl.classList.add('open'); sidebarOverlayEl.classList.add('show'); }
+function closeDrawer(){ sidebarEl.classList.remove('open'); sidebarOverlayEl.classList.remove('show'); }
+document.getElementById('hamburger-btn').addEventListener('click', ()=>{
+  sidebarEl.classList.contains('open') ? closeDrawer() : openDrawer();
+});
+sidebarOverlayEl.addEventListener('click', closeDrawer);
+document.getElementById('logout-link').addEventListener('click', closeDrawer);
 
 function setMain(html){ document.getElementById('main').innerHTML = html; }
 function loadingMain(){ setMain('<div class="empty"><span class="spinner"></span> Chargement…</div>'); }
@@ -281,6 +346,12 @@ async function renderDashboard(){
     <div id="topbar"><h1>Dashboard</h1><div id="lastcheck">Dernière vérification : ${fmtDate(health.verifie_a)} <button class="btn small" id="refresh-btn" style="margin-left:8px">↻ Actualiser</button></div></div>
     <div id="health-banner" class="${level}"><div class="big">TACTIZO ADMIN — ${verdictTxt}</div></div>
 
+    <div class="section-title">À traiter / à anticiper</div>
+    <div class="card" style="margin-bottom:22px">
+      ${alerts.length ? `<table class="plain">${alerts.map(a=>`<tr class="${a.href?'clickable':''}" ${a.href?`onclick="goto('${a.href}')"`:''}><td style="width:26px">${a.sev==='r'?'🔴':'🟠'}</td><td>${esc(a.text)}</td></tr>`).join('')}</table>`
+        : `<div class="empty">✓ Aucune action requise</div>`}
+    </div>
+
     <div class="grid grid-5" style="margin-bottom:22px">
       ${voyant('JEU', jeuLed, [
         `${jeu.ligues_actives} ligue(s) active(s)`,
@@ -303,12 +374,6 @@ async function renderDashboard(){
       ${voyant('TECHNIQUE', techLed, [
         cronsKo.length ? `⚠️ ${cronsKo.length} cron(s) en échec` : `${(tech.crons||[]).length} crons OK`,
       ])}
-    </div>
-
-    <div class="section-title">À traiter / à anticiper</div>
-    <div class="card" style="margin-bottom:22px">
-      ${alerts.length ? `<table>${alerts.map(a=>`<tr class="${a.href?'clickable':''}" ${a.href?`onclick="goto('${a.href}')"`:''}><td style="width:26px">${a.sev==='r'?'🔴':'🟠'}</td><td>${esc(a.text)}</td></tr>`).join('')}</table>`
-        : `<div class="empty">✓ Aucune action requise</div>`}
     </div>
 
     <div class="section-title">Activité — 7 derniers jours</div>
@@ -366,10 +431,10 @@ async function renderJoueurs(){
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" onclick="openPlayer('${r.user_id}')">
           <td>${esc(r.email)}</td>
-          <td>${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
-          <td>${fmtDate(r.created_at)}</td>
-          <td>${fmtRel(r.last_sign_in_at)}</td>
-          <td>${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
+          <td data-label="Ligue(s)">${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
+          <td data-label="Créé le">${fmtDate(r.created_at)}</td>
+          <td data-label="Dernière connexion">${fmtRel(r.last_sign_in_at)}</td>
+          <td data-label="Statut">${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
         </tr>`).join('') : `<tr><td colspan="5"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
       </tbody></table>
       <div class="pager">
@@ -397,7 +462,7 @@ async function openPlayer(userId){
 
       <div class="section-title">Ligues</div>
       <table><thead><tr><th>Ligue</th><th>Statut</th><th>Capital</th><th>Points</th></tr></thead>
-      <tbody>${d.ligues.length? d.ligues.map(l=>`<tr><td>${esc(l.league_name)} (${esc(l.league_code)})</td><td>${esc(l.league_status)}</td><td>${fmtEuro(l.capital)}</td><td>${l.points}</td></tr>`).join('')
+      <tbody>${d.ligues.length? d.ligues.map(l=>`<tr><td>${esc(l.league_name)} (${esc(l.league_code)})</td><td data-label="Statut">${esc(l.league_status)}</td><td data-label="Capital">${fmtEuro(l.capital)}</td><td data-label="Points">${l.points}</td></tr>`).join('')
         : `<tr><td colspan="4" class="faint">Aucune ligue rejointe.</td></tr>`}</tbody></table>
 
       <div class="section-title">Entitlements</div>
@@ -443,9 +508,9 @@ async function renderLigues(){
       <table><thead><tr><th>Code</th><th>Nom</th><th>Statut</th><th>Journée</th><th>Joueurs</th><th>Mode</th><th>Anomalies</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(l=>`
         <tr class="clickable" onclick="openLeague('${l.id}')">
-          <td class="mono">${esc(l.code)}</td><td>${esc(l.name)}</td><td>${esc(l.status)}</td>
-          <td>${l.current_day}/${l.num_days}</td><td>${l.nb_joueurs}</td><td>${esc(l.data_mode)}/${esc(l.engine||'')}</td>
-          <td>${l.resolve_lock_bloque?tag('r','verrou bloqué'):''} ${l.sans_progression?tag('o','sans progression'):''} ${l.reviewer_gelee?tag('b','Reviewer gelée'):''}</td>
+          <td class="mono">${esc(l.code)}</td><td data-label="Nom">${esc(l.name)}</td><td data-label="Statut">${esc(l.status)}</td>
+          <td data-label="Journée">${l.current_day}/${l.num_days}</td><td data-label="Joueurs">${l.nb_joueurs}</td><td data-label="Mode">${esc(l.data_mode)}/${esc(l.engine||'')}</td>
+          <td data-label="Anomalies">${l.resolve_lock_bloque?tag('r','verrou bloqué'):''} ${l.sans_progression?tag('o','sans progression'):''} ${l.reviewer_gelee?tag('b','Reviewer gelée'):''}</td>
         </tr>`).join('') : `<tr><td colspan="7"><div class="empty">Aucune ligue ne correspond.</div></td></tr>`}
       </tbody></table>
       <div class="pager">
@@ -465,11 +530,13 @@ async function renderLigues(){
 }
 function changeLiguesPage(delta){ liguesPage=Math.max(1, liguesPage+delta); renderLigues(); }
 
+let CURRENT_LEAGUE_DETAIL = null;
 async function openLeague(id){
   const slot=document.getElementById('league-detail-slot');
   slot.innerHTML=`<div class="empty"><span class="spinner"></span> Chargement…</div>`;
   const d = await rpc('admin_bo_league_detail', {p_league_id:id});
   const L=d.league;
+  CURRENT_LEAGUE_DETAIL = {id:L.id, code:L.code, name:L.name, status:L.status, current_day:L.current_day, num_days:L.num_days, data_mode:L.data_mode, nb_joueurs:d.players.length};
   slot.innerHTML=`
     <div class="card" style="margin-top:16px">
       <div class="between"><h2>${esc(L.name)} — ${esc(L.code)}</h2>
@@ -478,12 +545,55 @@ async function openLeague(id){
 
       <div class="section-title">Joueurs</div>
       <table><thead><tr><th>Nom</th><th>Capital</th><th>Points</th><th></th></tr></thead>
-      <tbody>${d.players.map(p=>`<tr><td>${esc(p.name)}${p.is_ai?' 🤖':''}${p.is_organizer?' 👑':''}</td><td>${fmtEuro(p.capital)}</td><td>${p.points}</td><td>${p.user_id?`<button class="btn small" onclick="goto('joueurs');setTimeout(()=>openPlayer('${p.user_id}'),400)">Voir fiche</button>`:''}</td></tr>`).join('')}</tbody></table>
+      <tbody>${d.players.map(p=>`<tr><td>${esc(p.name)}${p.is_ai?' 🤖':''}${p.is_organizer?' 👑':''}</td><td data-label="Capital">${fmtEuro(p.capital)}</td><td data-label="Points">${p.points}</td><td data-label="">${p.user_id?`<button class="btn small" onclick="goto('joueurs');setTimeout(()=>openPlayer('${p.user_id}'),400)">Voir fiche</button>`:''}</td></tr>`).join('')}</tbody></table>
 
       <div class="section-title">Duels / journées</div>
       <table><thead><tr><th>Jour</th><th>Affiches</th><th>Résolu</th><th>Date résolution</th></tr></thead>
-      <tbody>${d.duels.map(du=>`<tr><td>${du.day+1}</td><td>${du.nb_fixtures}</td><td>${du.resolved?'✓':'—'}</td><td>${fmtDate(du.resolved_at)}</td></tr>`).join('')}</tbody></table>
+      <tbody>${d.duels.map(du=>`<tr><td>Journée ${du.day+1}</td><td data-label="Affiches">${du.nb_fixtures}</td><td data-label="Résolu">${du.resolved?'✓':'—'}</td><td data-label="Date résolution">${fmtDate(du.resolved_at)}</td></tr>`).join('')}</tbody></table>
+
+      <div class="section-title">Zone sensible</div>
+      <div class="card" style="border-color:var(--red);margin-bottom:0">
+        <div class="hstack">
+          <button class="btn danger" onclick="actionDeleteLeague()">🗑 Supprimer cette ligue</button>
+          <div class="faint">Suppression définitive — irréversible, aucune récupération possible.</div>
+        </div>
+      </div>
     </div>`;
+}
+
+function actionDeleteLeague(){
+  const L = CURRENT_LEAGUE_DETAIL;
+  if(!L) return;
+  const ov=document.createElement('div'); ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal">
+    <h3>⚠️ Supprimer définitivement cette ligue</h3>
+    <div class="card" style="background:var(--red-bg);margin-bottom:14px">
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px">${esc(L.name)} — <span class="mono">${esc(L.code)}</span></div>
+      <div class="faint">Statut : ${esc(L.status)} · Journée ${L.current_day}/${L.num_days} · ${L.data_mode==='real'?'Ligue RÉELLE':'Ligue simulée'} · ${L.nb_joueurs} joueur(s)</div>
+    </div>
+    <div style="color:var(--red);font-weight:600;font-size:13px;margin-bottom:14px">Cette action est définitive : la ligue, ses paris, duels et rachats seront supprimés sans aucune récupération possible.</div>
+    <div class="field"><label>Pour confirmer, retape exactement le code de la ligue (<span class="mono">${esc(L.code)}</span>)</label><input type="text" id="dl-code" autocomplete="off"></div>
+    <div class="field"><label>Mot de passe admin (confirmation)</label><input type="password" id="dl-pass"></div>
+    <div class="field"><label>Motif de la suppression (obligatoire, conservé dans le journal)</label><input type="text" id="dl-reason"></div>
+    <div class="hstack" style="justify-content:flex-end"><button class="btn" id="dl-cancel">Annuler</button><button class="btn danger" id="dl-ok">Supprimer définitivement</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#dl-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#dl-ok').onclick=async ()=>{
+    const codeTyped=document.getElementById('dl-code').value.trim();
+    const pass=document.getElementById('dl-pass').value;
+    const reason=document.getElementById('dl-reason').value.trim();
+    if(codeTyped!==L.code){ toast('Le code tapé ne correspond pas.', false); return; }
+    if(!pass){ toast('Mot de passe requis.', false); return; }
+    if(!reason){ toast('Motif requis.', false); return; }
+    const btn=ov.querySelector('#dl-ok'); btn.disabled=true; btn.textContent='Suppression…';
+    try{
+      await rpc('admin_bo_delete_league', {p_admin_id:ME.id, p_admin_password:pass, p_league_id:L.id, p_league_code:codeTyped, p_reason:reason});
+      ov.remove();
+      toast('Ligue supprimée.', true);
+      renderLigues();
+    }catch(e){ toast('Échec : '+(e.message||e), false); btn.disabled=false; btn.textContent='Supprimer définitivement'; }
+  };
 }
 
 // ================================================================== USAGE
@@ -519,19 +629,19 @@ async function renderUsage(){
 
     <div class="section-title">Joueurs les plus actifs</div>
     <div class="card" style="margin-bottom:22px">
-      <table><thead><tr><th>Joueur</th><th>Pronostics</th></tr></thead>
+      <table class="plain"><thead><tr><th>Joueur</th><th>Pronostics</th></tr></thead>
       <tbody>${det.joueurs_plus_actifs.length? det.joueurs_plus_actifs.map(j=>`<tr><td>${esc(j.nom)}</td><td>${j.pronostics}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Pas encore assez de données.</td></tr>`}</tbody></table>
     </div>
 
     <div class="grid grid-2" style="margin-bottom:22px">
       <div class="card">
         <div class="section-title" style="margin-top:0">Ligues les plus actives</div>
-        <table><thead><tr><th>Ligue</th><th>Pronostics</th></tr></thead>
+        <table class="plain"><thead><tr><th>Ligue</th><th>Pronostics</th></tr></thead>
         <tbody>${det.ligues_plus_actives.length? det.ligues_plus_actives.map(l=>`<tr><td>${esc(l.name)} (${esc(l.code)})</td><td>${l.pronostics}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">—</td></tr>`}</tbody></table>
       </div>
       <div class="card">
         <div class="section-title" style="margin-top:0">Bonus les plus utilisés</div>
-        <table><thead><tr><th>Bonus</th><th>Utilisations</th></tr></thead>
+        <table class="plain"><thead><tr><th>Bonus</th><th>Utilisations</th></tr></thead>
         <tbody>${det.bonus_plus_utilises.length? det.bonus_plus_utilises.map(b=>`<tr><td>${esc(b.bonus_id)}</td><td>${b.utilisations}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">—</td></tr>`}</tbody></table>
         <div class="faint" style="margin-top:6px">${esc(det.bonus_moins_utilises_note)}</div>
       </div>
@@ -583,7 +693,7 @@ async function renderMonetisation(){
     <div class="section-title">Offres</div>
     <div class="card" style="margin-bottom:22px">
       <div class="faint" style="margin-bottom:10px">Catalogue connu (Joueur IA, Bonus complets, Trêve, Rachat, Duel Live, Stats avancées, pack Tactizo Premium — ${fmtEuro(m.pack_premium_prix_eur)}). Comptes actifs par option ci-dessous, calculés depuis <span class="mono">entitlements</span> :</div>
-      <table><thead><tr><th>Option</th><th>Comptes actifs</th></tr></thead>
+      <table class="plain"><thead><tr><th>Option</th><th>Comptes actifs</th></tr></thead>
       <tbody>${Object.keys(m.entitlements_actifs_par_option||{}).length? Object.entries(m.entitlements_actifs_par_option).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Aucun entitlement actif actuellement.</td></tr>`}</tbody></table>
       <div class="faint" style="margin-top:8px">${m.joueurs_avec_entitlement} joueur(s) au total avec au moins une option active.</div>
     </div>
@@ -605,8 +715,8 @@ async function renderMonetisation(){
     <div class="card" style="margin-bottom:22px">
       <table><thead><tr><th>Code</th><th>Actif</th><th>Durée</th><th>Utilisations</th><th>Créé le</th><th></th></tr></thead>
       <tbody>${m.codes_promo.length? m.codes_promo.map(c=>`
-        <tr><td class="mono">${esc(c.code)}</td><td>${c.actif?tag('g','actif'):tag('n','inactif')}</td><td>${c.duree_j} j</td><td>${c.utilisations}</td><td>${fmtDate(c.created_at)}</td>
-        <td><button class="btn small" onclick="actionTogglePromo('${esc(c.code)}', ${!c.actif})">${c.actif?'Désactiver':'Activer'}</button>
+        <tr><td class="mono">${esc(c.code)}</td><td data-label="Actif">${c.actif?tag('g','actif'):tag('n','inactif')}</td><td data-label="Durée">${c.duree_j} j</td><td data-label="Utilisations">${c.utilisations}</td><td data-label="Créé le">${fmtDate(c.created_at)}</td>
+        <td data-label=""><button class="btn small" onclick="actionTogglePromo('${esc(c.code)}', ${!c.actif})">${c.actif?'Désactiver':'Activer'}</button>
         <button class="btn small danger" onclick="actionDeletePromo('${esc(c.code)}')">Supprimer</button></td></tr>`).join('')
         : `<tr><td colspan="6"><div class="empty">Aucun code promo configuré.</div></td></tr>`}</tbody></table>
     </div>
@@ -629,8 +739,8 @@ async function renderSysteme(){
     <div class="section-title">Crons planifiés (pg_cron, en direct)</div>
     <div class="card" style="margin-bottom:22px">
       <table><thead><tr><th>Job</th><th>Planification</th><th>Actif</th><th>Dernier statut</th><th>Dernière exécution</th></tr></thead>
-      <tbody>${s.crons.map(c=>`<tr><td class="mono">${esc(c.job)}</td><td class="mono">${esc(c.schedule)}</td><td>${c.actif?tag('g','oui'):tag('r','non')}</td>
-        <td>${c.dernier_statut==='succeeded'?tag('g','succeeded'):tag('r',c.dernier_statut||'inconnu')}</td><td>${fmtRel(c.derniere_execution)}</td></tr>`).join('')}</tbody></table>
+      <tbody>${s.crons.map(c=>`<tr><td class="mono">${esc(c.job)}</td><td class="mono" data-label="Planification">${esc(c.schedule)}</td><td data-label="Actif">${c.actif?tag('g','oui'):tag('r','non')}</td>
+        <td data-label="Dernier statut">${c.dernier_statut==='succeeded'?tag('g','succeeded'):tag('r',c.dernier_statut||'inconnu')}</td><td data-label="Dernière exécution">${fmtRel(c.derniere_execution)}</td></tr>`).join('')}</tbody></table>
     </div>
 
     <div class="grid grid-2" style="margin-bottom:22px">
@@ -650,14 +760,14 @@ async function renderSysteme(){
       <tbody>${s.echeances.map(e=>{
         const days = e.date_echeance ? Math.round((new Date(e.date_echeance)-new Date())/86400000) : null;
         const urgent = days!=null && days<90;
-        return `<tr><td>${esc(e.libelle)}</td><td>${esc(e.categorie)}</td><td>${e.date_echeance||'—'}${days!=null?` <span class="${urgent?'tag o':'faint'}" ${urgent?'':'style="background:none"'}>${days>=0?('J-'+days):'dépassée'}</span>`:''}</td><td>${e.automatique?tag('g','auto'):tag('o','manuelle')}</td><td class="faint">${esc(e.action_requise||'—')}</td></tr>`;
+        return `<tr><td>${esc(e.libelle)}</td><td data-label="Catégorie">${esc(e.categorie)}</td><td data-label="Date">${e.date_echeance||'—'}${days!=null?` <span class="${urgent?'tag o':'faint'}" ${urgent?'':'style="background:none"'}>${days>=0?('J-'+days):'dépassée'}</span>`:''}</td><td data-label="Auto">${e.automatique?tag('g','auto'):tag('o','manuelle')}</td><td class="faint" data-label="Action requise">${esc(e.action_requise||'—')}</td></tr>`;
       }).join('')}</tbody></table>
     </div>
 
     <div class="section-title">Signalements récents</div>
     <div class="card">
       <table><thead><tr><th>#</th><th>Type</th><th>Statut</th><th>Ligue</th><th>Version</th><th>Reçu</th></tr></thead>
-      <tbody>${s.signalements_recents.length? s.signalements_recents.map(r=>`<tr><td>${r.num}</td><td>${esc(r.kind)}</td><td>${esc(r.status)}</td><td>${esc(r.league_code||'—')}</td><td>${esc(r.app_version||'—')}</td><td>${fmtRel(r.created_at)}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">Aucun signalement récent.</div></td></tr>`}</tbody></table>
+      <tbody>${s.signalements_recents.length? s.signalements_recents.map(r=>`<tr><td>#${r.num}</td><td data-label="Type">${esc(r.kind)}</td><td data-label="Statut">${esc(r.status)}</td><td data-label="Ligue">${esc(r.league_code||'—')}</td><td data-label="Version">${esc(r.app_version||'—')}</td><td data-label="Reçu">${fmtRel(r.created_at)}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">Aucun signalement récent.</div></td></tr>`}</tbody></table>
     </div>
   `);
 }
@@ -671,7 +781,7 @@ async function renderJournal(){
     <div id="topbar"><h1>Journal admin</h1><div class="faint">100 dernières actions</div></div>
     <div class="card">
       <table><thead><tr><th>Date</th><th>Action</th><th>Cible</th><th>Motif</th></tr></thead>
-      <tbody>${data.length? data.map(a=>`<tr><td>${fmtDate(a.created_at)}</td><td class="mono">${esc(a.action)}</td><td>${esc(a.target_type||'')} ${esc(a.target_id||'')}</td><td>${esc(a.reason||'—')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">Aucune action journalisée pour l'instant.</div></td></tr>`}</tbody></table>
+      <tbody>${data.length? data.map(a=>`<tr><td>${fmtDate(a.created_at)}</td><td class="mono" data-label="Action">${esc(a.action)}</td><td data-label="Cible">${esc(a.target_type||'')} ${esc(a.target_id||'')}</td><td data-label="Motif">${esc(a.reason||'—')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">Aucune action journalisée pour l'instant.</div></td></tr>`}</tbody></table>
     </div>
   `);
 }
