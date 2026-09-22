@@ -354,9 +354,10 @@ async function renderDashboard(){
 
     <div class="grid grid-5" style="margin-bottom:22px">
       ${voyant('JEU', jeuLed, [
-        `${jeu.ligues_actives} ligue(s) active(s)`,
+        `${jeu.ligues_en_preparation} en préparation · ${jeu.ligues_en_competition} en compétition`,
         jeu.ligues_bloquees.length? `${jeu.ligues_bloquees.length} bloquée(s) (verrou > 15 min)` : 'Aucune ligue bloquée',
-        jeu.running_sans_progression.length? `${jeu.running_sans_progression.length} sans progression >7j` : 'Progression normale'
+        jeu.running_sans_progression.length? `${jeu.running_sans_progression.length} sans progression >7j` : 'Progression normale',
+        jeu.ligues_reviewer_gelees.length? `${jeu.ligues_reviewer_gelees.length} ligue(s) Reviewer gelée(s) — état normal` : 'Aucune ligue technique gelée'
       ])}
       ${voyant('MATCHS', matchLed, [
         `${matchs.duels_total_journee_active} duel(s) journée active`,
@@ -382,12 +383,16 @@ async function renderDashboard(){
       ${kpi(act7.utilisateurs_actifs, 'Utilisateurs actifs')}
       ${kpi(act7.joueurs_actifs, 'Joueurs actifs', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
     </div>
-    <div class="grid grid-3" style="margin-bottom:22px">
-      ${kpi(act7.ligues_actives, 'Ligues actives')}
+    <div class="grid grid-2" style="margin-bottom:8px">
+      ${kpi(act7.ligues_en_preparation, 'Ligues en préparation')}
+      ${kpi(act7.ligues_en_competition, 'Ligues en compétition')}
+    </div>
+    <div class="faint" style="margin-bottom:16px">Photo instantanée (indépendante de la période 7 jours ci-dessus) — comptes techniques/démo/reviewer exclus.</div>
+    <div class="grid grid-2" style="margin-bottom:22px">
       ${kpi(act7.pronostics_enregistres, 'Pronostics enregistrés')}
       ${kpi(act7.journees_resolues, 'Journées résolues')}
     </div>
-    <div class="faint">Comptes techniques/démo/reviewer exclus de ces chiffres. Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
+    <div class="faint">Comptes techniques/démo/reviewer exclus de ces chiffres. Les ligues techniques (ex: Reviewer gelée) restent supervisées dans le voyant JEU ci-dessus. Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
   `);
   document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
 }
@@ -617,8 +622,12 @@ async function renderUsage(){
       ${kpi(sum.utilisateurs_actifs,'Utilisateurs actifs')}
       ${kpi(sum.joueurs_actifs,'Joueurs actifs', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
     </div>
-    <div class="grid grid-3" style="margin-bottom:22px">
-      ${kpi(sum.ligues_actives,'Ligues actives')}
+    <div class="grid grid-2" style="margin-bottom:8px">
+      ${kpi(sum.ligues_en_preparation,'Ligues en préparation')}
+      ${kpi(sum.ligues_en_competition,'Ligues en compétition')}
+    </div>
+    <div class="faint" style="margin-bottom:16px">${esc(sum.ligues_definition||'')}</div>
+    <div class="grid grid-2" style="margin-bottom:22px">
       ${kpi(sum.pronostics_enregistres,'Pronostics enregistrés')}
       ${kpi(sum.journees_resolues,'Journées résolues')}
     </div>
