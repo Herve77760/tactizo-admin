@@ -465,6 +465,13 @@ async function renderJoueurs(){
       <button class="btn" id="j-search-btn">Rechercher</button></div>
     </div>
     <div class="card">
+      ${/* ⚠️ Dernière activité : fmtRel(null) rend déjà un tiret. On n'approxime JAMAIS une
+             activité absente avec la dernière connexion — un compte qui n'a pas encore émis le
+             signal doit se voir comme tel.
+             ⚠️ ET SURTOUT : ce commentaire est un commentaire JAVASCRIPT, pas un <!-- HTML -->.
+             Un commentaire HTML placé DANS ce template literal y reste du texte : le moindre
+             backtick qu'il contient REFERME la chaîne et casse tout le script. C'est exactement
+             ce qui est arrivé le 2026-09-23 et a rendu le back-office muet. */''}
       <table><thead><tr><th>Email</th><th>Pseudo(s)</th><th>Créé le</th><th>Dernière connexion</th><th>Dernière activité</th><th>Statut</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" onclick="openPlayer('${r.user_id}')">
@@ -472,8 +479,6 @@ async function renderJoueurs(){
           <td data-label="Ligue(s)">${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
           <td data-label="Créé le">${fmtDate(r.created_at)}</td>
           <td data-label="Dernière connexion">${fmtRel(r.last_sign_in_at)}</td>
-          <!-- ⚠️ `fmtRel(null)` rend deja '—'. On n'approxime JAMAIS une activite absente avec la
-               derniere connexion : un compte qui n'a pas encore emis le signal doit se voir. -->
           <td data-label="Dernière activité">${fmtRel(r.last_active_at)}</td>
           <td data-label="Statut">${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
         </tr>`).join('') : `<tr><td colspan="6"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
