@@ -352,13 +352,23 @@ async function renderDashboard(){
      « anormal » demanderait de comparer l'âge du duel à sa vraie échéance de sélection, qui n'est
      PAS dans ce payload (elle se dérive de `leagues.day_started_at` + la formule de la ligue,
      côté client — cf. `dayTimes()` dans app/index.html). Ce qui reste à décider avant qu'une
-     vraie alerte existe : (1) exposer cette échéance dans `admin_bo_health()` — donc une
-     migration SQL, hors périmètre de ce lot correctif ; (2) choisir CE QUI est anormal : un duel
-     encore sans affiches APRÈS l'échéance de sélection, ce qui voudrait dire que le filet de
-     secours n'a pas fait son travail. Tant que (1) n'est pas fait, le Dashboard se contente de
-     DÉCRIRE l'état, sans prétendre le juger.
-     ⚠️ GRIS, PAS VERT : vert dirait « toutes les affiches sont présentes », ce qui serait faux. */
-  const matchLed = matchs.duels_sans_fixtures_journee_active>0 ? 'gray' : 'g';
+     vraie alerte existe : (1) exposer cette échéance dans `admin_bo_health()` ; (2) choisir CE QUI
+     est anormal : un duel encore sans affiches APRÈS l'échéance, donc un filet qui n'a pas agi.
+     ⚠️ (2026-09-23, second temps) — LES DEUX POINTS SONT FAITS. `admin_bo_health()` expose
+     désormais `duels_sans_fixtures_en_retard`, calculé avec `tml_sel_deadline()` : la MÊME règle
+     que le filet (`selDeadlineMs`, FAST 12 h / Classique 24 h sur `day_started_at`), posée une
+     seule fois en SQL au lieu d'être recopiée une troisième fois.
+     On était passé d'une fausse alerte à un SILENCE — un filet en panne ne se voyait nulle part.
+     Désormais : gris tant qu'on attend dans les temps, orange dès qu'une échéance est dépassée.
+     ⚠️ GRIS, PAS VERT quand on attend : vert dirait « toutes les affiches sont présentes », faux.
+     ⚠️ `ligues_actives_sans_day_started_at` est l'AUTRE moitié : sans date de départ, il n'y a pas
+     d'échéance, donc le filet reste inerte et AUCUN duel ne sera jamais compté « en retard ». Vécu
+     le 23/09 (resolve_prep ne posait pas la date, deux ligues de campagne bloquées en silence) :
+     cette panne-là doit s'afficher, sinon le compteur ci-dessus mentirait par omission. */
+  const enRetard = matchs.duels_sans_fixtures_en_retard || 0;
+  const sansDepart = matchs.ligues_actives_sans_day_started_at || 0;
+  const matchLed = (enRetard>0 || sansDepart>0) ? 'o'
+                 : (matchs.duels_sans_fixtures_journee_active>0 ? 'gray' : 'g');
   const apiLed = quota.remaining!=null ? (quota.remaining<50?'r':quota.remaining<150?'o':'g') : 'gray';
   const integLed = integ.bet_log_erreurs_24h>0 || integ.ligues_resolve_lock_bloque>0 ? 'o' : 'g';
 
@@ -383,8 +393,10 @@ async function renderDashboard(){
         `${matchs.duels_total_journee_active} duel(s) journée active`,
         matchs.duels_sans_fixtures_journee_active>0
           ? `${matchs.duels_sans_fixtures_journee_active} en attente de sélection des matchs`
-          : 'Toutes les affiches présentes'
-      ])}
+          : 'Toutes les affiches présentes',
+        enRetard>0 ? `⚠️ ${enRetard} duel(s) en retard — tirage automatique attendu` : null,
+        sansDepart>0 ? `⚠️ ${sansDepart} ligue(s) active(s) sans date de départ de journée` : null
+      ].filter(Boolean))}
       ${voyant('API', apiLed, quota.remaining!=null ? [
         `${quota.remaining} crédits restants / ${quota.limit||500}`,
         `${quota.used||'—'} utilisés ce mois`
@@ -431,10 +443,18 @@ function collectAlerts(h){
      qui vient de s'ouvrir : il aurait déclenché « X point(s) nécessite(nt) ton attention » à chaque
      début de journée de chaque ligue. L'information reste affichée, en clair, dans le voyant
      MATCHS — elle n'est simplement plus présentée comme une anomalie.
-     ⚠️ NE PAS LA REMETTRE ICI TELLE QUELLE : une vraie alerte doit comparer l'âge du duel à son
-     échéance de sélection, absente de ce payload aujourd'hui (voir la note de `matchLed`).
      Orange = quelque chose qui mérite réellement l'attention d'Hervé, jamais un état de marche
-     normale — c'est ce qui fait qu'un cockpit reste lu. */
+     normale — c'est ce qui fait qu'un cockpit reste lu.
+     ⚠️ (2026-09-23, second temps) — CE QUI ALERTE MAINTENANT, c'est `duels_sans_fixtures_en_retard`
+     et lui seul : des duels dont l'échéance de sélection est DÉPASSÉE et qui n'ont toujours pas
+     d'affiches, donc un filet `ensure-fixtures-reelles` qui n'a pas fait son travail. Le compteur
+     d'attente, lui, ne doit JAMAIS revenir ici. */
+  if(h.matchs.duels_sans_fixtures_en_retard>0)
+    out.push({sev:'o', text:`${h.matchs.duels_sans_fixtures_en_retard} duel(s) en retard — tirage automatique attendu`, href:'ligues'});
+  /* Sans date de départ de journée, il n'y a pas d'échéance : le filet ne se déclenchera jamais et
+     le compteur ci-dessus restera à zéro en mentant. C'est la panne du 23/09, elle doit se voir. */
+  if(h.matchs.ligues_actives_sans_day_started_at>0)
+    out.push({sev:'o', text:`${h.matchs.ligues_actives_sans_day_started_at} ligue(s) active(s) sans date de départ de journée — le tirage automatique ne peut pas se déclencher`, href:'ligues'});
   const ko=(h.technique.crons||[]).filter(c=>c.dernier_statut && c.dernier_statut!=='succeeded');
   ko.forEach(c=> out.push({sev:'r', text:`Cron "${c.job}" en échec (dernier statut : ${c.dernier_statut})`, href:'systeme'}));
   if(h.integrite.bet_log_erreurs_24h>0) out.push({sev:'o', text:`${h.integrite.bet_log_erreurs_24h} erreur(s) de soumission de pari sur les dernières 24h`});
