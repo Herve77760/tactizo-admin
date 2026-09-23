@@ -402,7 +402,7 @@ async function renderDashboard(){
     <div class="section-title">Activité — 7 derniers jours</div>
     <div class="grid grid-3" style="margin-bottom:16px">
       ${kpi(act7.nouveaux_comptes, 'Nouveaux comptes')}
-      ${kpi(act7.utilisateurs_actifs, 'Utilisateurs actifs')}
+      ${kpi(act7.utilisateurs_actifs, 'Utilisateurs actifs <span class="faint">— web uniquement, mobile à partir de la prochaine version</span>')}
       ${kpi(act7.joueurs_actifs, 'Joueurs actifs', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
     </div>
     <div class="grid grid-2" style="margin-bottom:8px">
@@ -465,16 +465,27 @@ async function renderJoueurs(){
       <button class="btn" id="j-search-btn">Rechercher</button></div>
     </div>
     <div class="card">
-      <table><thead><tr><th>Email</th><th>Pseudo(s)</th><th>Créé le</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
+      <table><thead><tr><th>Email</th><th>Pseudo(s)</th><th>Créé le</th><th>Dernière connexion</th><th>Dernière activité</th><th>Statut</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" onclick="openPlayer('${r.user_id}')">
           <td>${esc(r.email)}</td>
           <td data-label="Ligue(s)">${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
           <td data-label="Créé le">${fmtDate(r.created_at)}</td>
           <td data-label="Dernière connexion">${fmtRel(r.last_sign_in_at)}</td>
+          <!-- ⚠️ `fmtRel(null)` rend deja '—'. On n'approxime JAMAIS une activite absente avec la
+               derniere connexion : un compte qui n'a pas encore emis le signal doit se voir. -->
+          <td data-label="Dernière activité">${fmtRel(r.last_active_at)}</td>
           <td data-label="Statut">${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
-        </tr>`).join('') : `<tr><td colspan="5"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
+        </tr>`).join('') : `<tr><td colspan="6"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
       </tbody></table>
+      <div class="faint" style="margin:10px 0 4px">
+        <b>Dernière connexion</b> : dernière authentification Supabase. Une session reste ouverte plusieurs
+        jours — un compte peut donc utiliser Tactizo longtemps après cette date, sans jamais se reconnecter.<br>
+        <b>Dernière activité</b> : dernière utilisation réelle de l'application, horodatée par le serveur à
+        l'ouverture et au retour au premier plan. <b>Web uniquement pour l'instant</b> — les applications
+        mobiles installées (8.481) n'émettent pas encore ce signal, elles afficheront « — » jusqu'à la
+        prochaine version. Un tiret signifie « aucune activité enregistrée », jamais une estimation.
+      </div>
       <div class="pager">
         <button class="btn small" ${joueursPage<=1?'disabled':''} onclick="changeJoueursPage(-1)">← Précédent</button>
         Page ${res.page} / ${totalPages}
@@ -649,7 +660,7 @@ async function renderUsage(){
     </div>
     <div class="grid grid-3" style="margin-bottom:16px">
       ${kpi(sum.nouveaux_comptes,'Nouveaux comptes')}
-      ${kpi(sum.utilisateurs_actifs,'Utilisateurs actifs')}
+      ${kpi(sum.utilisateurs_actifs,'Utilisateurs actifs <span class="faint">— web uniquement, mobile à partir de la prochaine version</span>')}
       ${kpi(sum.joueurs_actifs,'Joueurs actifs', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
     </div>
     <div class="grid grid-2" style="margin-bottom:8px">
