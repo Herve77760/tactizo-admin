@@ -589,6 +589,27 @@ function optionsCompteHTML(entitlements){
     <tbody>${lignes}</tbody></table>`;
 }
 
+/* ===== PLATEFORME / VERSION / BUILD / DERNIÈRE ACTIVITÉ =====================================
+   Alimenté par `user_activity`, renseigné par `touch_activity()` au démarrage et au retour au
+   premier plan. Sert à piloter le remplacement des applications trop anciennes.
+   ⚠️ « — » N'EST PAS UNE DONNÉE MANQUANTE, C'EST UN SIGNAL. Les applications antérieures à
+   v8.500 n'annoncent ni version ni build (celles d'avant v8.492 n'appellent même pas
+   `touch_activity`). Une ligne sans version = un testeur encore sur une vieille build : c'est
+   exactement ce qu'on cherche à voir. Ne jamais « combler » ce tiret par une approximation.
+   ⚠️ Le web n'a pas de build : sa colonne reste vide par nature, pas par défaut de remontée. */
+function activiteHTML(a){
+  const PLATS={ ios:'🍎 iOS', android:'🤖 Android', web:'🌐 Web' };
+  if(!a) return `<div class="section-title">Appareil et version</div>`
+    + `<div class="faint" style="margin-bottom:6px">Aucune activité enregistrée — ce compte n'a pas encore ouvert une version qui sait l'annoncer (v8.492 ou plus récente).</div>`;
+  const plat = a.platform ? (PLATS[a.platform] || a.platform) : '<span class="faint">—</span>';
+  const ver  = a.app_version ? esc(a.app_version) : '<span class="faint">—</span>';
+  const bld  = a.build ? esc(a.build) : '<span class="faint">—</span>';
+  return `<div class="section-title">Appareil et version</div>
+    <table><thead><tr><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th></tr></thead>
+    <tbody><tr><td>${plat}</td><td data-label="Version">${ver}</td><td data-label="Build">${bld}</td>
+    <td data-label="Dernière activité">${fmtRel(a.last_active_at)}</td></tr></tbody></table>`;
+}
+
 async function openPlayer(userId){
   const slot = document.getElementById('player-detail-slot');
   slot.innerHTML = `<div class="empty"><span class="spinner"></span> Chargement de la fiche…</div>`;
@@ -608,6 +629,8 @@ async function openPlayer(userId){
 
       <div class="section-title">Points Tactizo</div>
       <div class="hstack">${kpi(d.points.solde,'Solde')}${kpi(d.points.en_validation,'En validation')}${kpi(d.points.geles,'Gelés')}</div>
+
+      ${activiteHTML(d.activite)}
 
       <div class="section-title">Appareils</div>
       <div class="hstack" style="margin-bottom:6px">${d.appareils.length? d.appareils.map(a=>tag(a.active?'g':'n', a.platform+(a.active?'':' (inactif)'))).join('') : '<span class="faint">Aucun</span>'}</div>
