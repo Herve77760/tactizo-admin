@@ -370,7 +370,11 @@ async function renderDashboard(){
   const matchLed = (enRetard>0 || sansDepart>0) ? 'o'
                  : (matchs.duels_sans_fixtures_journee_active>0 ? 'gray' : 'g');
   const apiLed = quota.remaining!=null ? (quota.remaining<50?'r':quota.remaining<150?'o':'g') : 'gray';
-  const integLed = integ.bet_log_erreurs_24h>0 || integ.ligues_resolve_lock_bloque>0 ? 'o' : 'g';
+  /* ⚠️ 2026-09-25 — le voyant suit les erreurs NON RÉSOLUES, pas le total. Une coupure réseau
+     rattrapée 25 s plus tard (cas réel de Félicie le 23/09) laissait le Dashboard orange 24 h :
+     l'orange finissait par ne plus rien vouloir dire. Le total reste affiché juste en dessous. */
+  const errNonRes = (integ.bet_log_erreurs_24h_non_resolues!=null) ? integ.bet_log_erreurs_24h_non_resolues : integ.bet_log_erreurs_24h;
+  const integLed = errNonRes>0 || integ.ligues_resolve_lock_bloque>0 ? 'o' : 'g';
 
   setMain(`
     <div id="topbar"><h1>Dashboard</h1><div id="lastcheck">Dernière vérification : ${fmtDate(health.verifie_a)} <button class="btn small" id="refresh-btn" style="margin-left:8px">↻ Actualiser</button></div></div>
@@ -403,7 +407,7 @@ async function renderDashboard(){
       ] : [nd()])}
       ${voyant('INTÉGRITÉ', integLed, [
         `Surveillance partielle`,
-        `${integ.bet_log_erreurs_24h} erreur(s) de pari (24h)`,
+        `${integ.bet_log_erreurs_24h} erreur(s) de pari (24h)${integ.bet_log_erreurs_24h>0 ? (errNonRes>0 ? ` — dont ${errNonRes} non résolue(s)` : ' — toutes rattrapées') : ''}`,
         `${integ.ligues_resolve_lock_bloque} verrou(x) anormal(aux)`
       ])}
       ${voyant('TECHNIQUE', techLed, [
@@ -457,7 +461,12 @@ function collectAlerts(h){
     out.push({sev:'o', text:`${h.matchs.ligues_actives_sans_day_started_at} ligue(s) active(s) sans date de départ de journée — le tirage automatique ne peut pas se déclencher`, href:'ligues'});
   const ko=(h.technique.crons||[]).filter(c=>c.dernier_statut && c.dernier_statut!=='succeeded');
   ko.forEach(c=> out.push({sev:'r', text:`Cron "${c.job}" en échec (dernier statut : ${c.dernier_statut})`, href:'systeme'}));
-  if(h.integrite.bet_log_erreurs_24h>0) out.push({sev:'o', text:`${h.integrite.bet_log_erreurs_24h} erreur(s) de soumission de pari sur les dernières 24h`});
+  /* ⚠️ Une erreur suivie d'un `submit_ok` pour le MÊME joueur, la MÊME ligue et la MÊME journée
+     est un incident CLOS : le pari est enregistré, il n'y a plus rien à faire. Seules les erreurs
+     restées sans succès postérieur méritent l'attention (cf. MIGRATION-admin-health-submit-error-
+     resolues.sql). Repli sur l'ancien compteur si la migration n'est pas encore passée. */
+  const errNR = (h.integrite.bet_log_erreurs_24h_non_resolues!=null) ? h.integrite.bet_log_erreurs_24h_non_resolues : h.integrite.bet_log_erreurs_24h;
+  if(errNR>0) out.push({sev:'o', text:`${errNR} erreur(s) de soumission de pari non résolue(s) sur les dernières 24h`});
   return out;
 }
 function voyant(title, led, lines){
@@ -524,6 +533,62 @@ async function renderJoueurs(){
 }
 function changeJoueursPage(delta){ joueursPage=Math.max(1, joueursPage+delta); renderJoueurs(); }
 
+/* ===== CATALOGUE DES OPTIONS BOUTIQUE ========================================================
+   Port fidèle de `SHOP_ORDER` et `SHOP` (app/index.html) : mêmes clés, même ORDRE, mêmes noms.
+   ⚠️ L'ordre compte : c'est celui de la Boutique, donc celui qu'Hervé a en tête en lisant la fiche.
+   ⚠️ Une option ajoutée à la Boutique doit l'être ici aussi. L'oubli serait SILENCIEUX côté
+   « non activées » (l'option manquerait de la liste) mais PAS côté actives : une clé inconnue
+   présente en base est quand même affichée, avec sa clé brute — jamais masquée.
+   ⚠️ « recap » (Partager ma saison) n'y est pas : retiré du catalogue payant en v6.65, gratuit. */
+const OPTIONS_CATALOGUE = [
+  { opt:'ia',            e:'🤖', nom:'Joueur IA' },
+  { opt:'bonuscomplets', e:'🃏', nom:'Bonus complets' },
+  { opt:'treve',         e:'🔄', nom:'Trêve de mi-saison' },
+  { opt:'rachat',        e:'🤝', nom:'Rachat de bonus' },
+  { opt:'duel_live',     e:'⚡', nom:'Duel Live' },
+  { opt:'stats',         e:'📊', nom:'Mes stats' },
+];
+/* Sources réellement écrites par le code, relevées dans le dépôt le 2026-09-25 :
+   admin (admin_bo_set_options) · stripe (stripe-webhook) · points (spend_points)
+   · promo (redeem_promo_code) · test (bouton de test in-app).
+   Une source inconnue est affichée telle quelle plutôt que traduite en « — » : mieux vaut une
+   étiquette technique lisible qu'une information effacée. */
+const OPTIONS_SOURCES = { admin:'Admin', stripe:'Achat Stripe', points:'Points Tactizo', promo:'Code promo', test:'Test' };
+
+/* Rend le bloc « Options du compte ». LECTURE SEULE : aucun bouton d'activation ici — la
+   modification reste dans « Actions administratives », plus bas, où elle est explicite. */
+function optionsCompteHTML(entitlements){
+  const parMo = {};
+  (entitlements||[]).forEach(e=>{ if(e && e.opt) parMo[e.opt] = e; });
+  // Catalogue d'abord, dans l'ordre Boutique ; puis les clés inconnues présentes en base.
+  const clesConnues = OPTIONS_CATALOGUE.map(o=>o.opt);
+  const inconnues = Object.keys(parMo).filter(k=>!clesConnues.includes(k))
+                          .map(k=>({opt:k, e:'❔', nom:k}));
+  const lignes = OPTIONS_CATALOGUE.concat(inconnues).map(o=>{
+    const e = parMo[o.opt];
+    if(!e) return `<tr><td>${o.e} ${esc(o.nom)}</td><td data-label="État">${tag('n','Inactive')}</td>`
+                + `<td data-label="Source" class="faint">—</td><td data-label="Activée le" class="faint">—</td>`
+                + `<td data-label="Expiration" class="faint">—</td></tr>`;
+    // `expires_at` nul = option PERMANENTE (c'est la convention de la table, pas une absence de
+    // donnée) ; une date déjà passée = option expirée, qui doit se voir comme telle et non rester
+    // verte : la ligne existe encore en base, seul le temps l'a invalidée.
+    const perm = !e.expires_at;
+    const expiree = !perm && new Date(e.expires_at) <= new Date();
+    const etat = expiree ? tag('r','Expirée') : tag('g','Active');
+    const src = e.source ? (OPTIONS_SOURCES[e.source] || e.source) : '—';
+    return `<tr><td>${o.e} ${esc(o.nom)}</td><td data-label="État">${etat}</td>`
+         + `<td data-label="Source">${esc(src)}</td>`
+         + `<td data-label="Activée le">${e.created_at?fmtDate(e.created_at):'<span class="faint">—</span>'}</td>`
+         + `<td data-label="Expiration">${perm?'<span class="faint">Permanente</span>':fmtDate(e.expires_at)}</td></tr>`;
+  }).join('');
+  const nbActives = OPTIONS_CATALOGUE.concat(inconnues).filter(o=>{
+    const e=parMo[o.opt]; return e && (!e.expires_at || new Date(e.expires_at) > new Date()); }).length;
+  return `<div class="section-title">Options du compte</div>
+    <div class="faint" style="margin-bottom:8px">${nbActives} option(s) active(s) sur ${OPTIONS_CATALOGUE.length+inconnues.length}. Lecture seule — la modification se fait plus bas, dans « Actions administratives ».</div>
+    <table><thead><tr><th>Option</th><th>État</th><th>Source</th><th>Activée le</th><th>Expiration</th></tr></thead>
+    <tbody>${lignes}</tbody></table>`;
+}
+
 async function openPlayer(userId){
   const slot = document.getElementById('player-detail-slot');
   slot.innerHTML = `<div class="empty"><span class="spinner"></span> Chargement de la fiche…</div>`;
@@ -539,8 +604,7 @@ async function openPlayer(userId){
       <tbody>${d.ligues.length? d.ligues.map(l=>`<tr><td>${esc(l.league_name)} (${esc(l.league_code)})</td><td data-label="Statut">${esc(l.league_status)}</td><td data-label="Capital">${fmtEuro(l.capital)}</td><td data-label="Points">${l.points}</td></tr>`).join('')
         : `<tr><td colspan="4" class="faint">Aucune ligue rejointe.</td></tr>`}</tbody></table>
 
-      <div class="section-title">Entitlements</div>
-      <div class="hstack" style="margin-bottom:6px">${d.entitlements.length? d.entitlements.map(e=>tag('b', e.opt+(e.expires_at?(' → '+fmtDate(e.expires_at)):' (permanent)'))).join('') : '<span class="faint">Aucun</span>'}</div>
+      ${optionsCompteHTML(d.entitlements)}
 
       <div class="section-title">Points Tactizo</div>
       <div class="hstack">${kpi(d.points.solde,'Solde')}${kpi(d.points.en_validation,'En validation')}${kpi(d.points.geles,'Gelés')}</div>
