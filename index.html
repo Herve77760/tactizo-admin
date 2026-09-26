@@ -511,7 +511,17 @@ async function renderJoueurs(){
              Un commentaire HTML placé DANS ce template literal y reste du texte : le moindre
              backtick qu'il contient REFERME la chaîne et casse tout le script. C'est exactement
              ce qui est arrivé le 2026-09-23 et a rendu le back-office muet. */''}
-      <table><thead><tr><th>Email</th><th>Pseudo(s)</th><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
+      ${/* ⚠️ 2026-09-26 — CET EN-TÊTE MENTAIT DEPUIS LONGTEMPS. Il annonçait « Pseudo(s) »
+             au-dessus d'une cellule qui rend `r.ligues`, c'est-à-dire des NOMS DE LIGUE (le
+             `data-label` de la cellule, lui, disait déjà « Ligue(s) » : les deux se contredisaient).
+             Corrigé dans le sens de ce qui est RÉELLEMENT affiché, et non l'inverse : ajouter une
+             vraie colonne de pseudos supposerait de modifier `admin_bo_players_search`, dont le
+             dépôt n'est pas la source de vérité — la fiche détaillée montre déjà les pseudos, ligue
+             par ligue. Pourquoi ça compte : l'identité d'un compte ne se lit NI dans un pseudo NI
+             dans la métadonnée `name` du compte, qui garde le nom de création — un compte créé par
+             une personne et utilisé par une autre y porte encore le nom du créateur. Le back-office
+             a toujours eu raison de s'appuyer sur l'EMAIL. */''}
+      <table><thead><tr><th>Email</th><th>Ligue(s)</th><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" onclick="openPlayer('${r.user_id}')" title="Ouvrir la fiche détaillée">
           <td><span class="lien-fiche">${esc(r.email)}</span></td>
