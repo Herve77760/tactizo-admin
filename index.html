@@ -53,6 +53,15 @@ th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;text-transf
 td{padding:9px 10px;border-bottom:1px solid var(--border2,var(--border))}
 tr:last-child td{border-bottom:none}
 tr.clickable:hover{background:var(--panel2);cursor:pointer}
+/* ⚠️ ACCESSIBILITÉ CLAVIER (2026-09-28) — la ligne était cliquable mais PAS atteignable au clavier :
+   un <tr> n'est pas focusable. `tabindex/role` sont posés dans le HTML, ce liseré rend le focus
+   visible. `:focus-visible` et non `:focus` : pas de liseré au clic à la souris. */
+tr.clickable:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;background:var(--panel2)}
+/* La fiche s'ouvre SOUS la liste : `scroll-margin-top` dit à `scrollIntoView` de s'arrêter un peu
+   avant, pour ne pas coller son premier mot au bord haut. Au-dessus de 720px #mobile-topbar est en
+   `display:none` : il n'y a aucun bandeau à compenser ici, seulement cette respiration. La valeur
+   mobile, elle, est calculée sur la hauteur du bandeau — voir la règle dans le @media plus bas. */
+#player-detail-slot,#league-detail-slot{scroll-margin-top:16px}
 /* ⚠️ La ligne etait deja cliquable, mais RIEN ne le montrait -- Herve a signale ne pas pouvoir
    ouvrir la fiche depuis la liste. Le geste existait, l'indice manquait. On donne donc a l'e-mail
    l'apparence d'un lien (souligne discret, couleur d'accent au survol de la ligne) : aucun
@@ -174,6 +183,29 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
   table:not(.plain) td:first-child{display:block;text-align:left;font-weight:700;font-size:14.5px;
     border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:4px}
   table.plain td{padding:8px 6px;vertical-align:top}
+  /* ⚠️ LE CHEVRON N'EST PAS DÉCORATIF (2026-09-28, retour d'Hervé sur mobile). En carte empilée,
+     le premier champ devient le TITRE de la carte — avec sa bordure basse, le soulignement de
+     `.lien-fiche` se lit comme de la mise en forme de titre, pas comme un lien. Et l'infobulle
+     `title="Ouvrir la fiche détaillée"` n'existe pas au doigt. Rien n'annonçait donc qu'une fiche
+     existe. Le chevron le dit, à l'endroit où l'œil finit une ligne.
+     Posé en `::after` sur la cellule : aucune colonne ajoutée, donc aucun `colspan` à revoir et
+     aucun effet sur le bureau. `aria-hidden` par nature (pseudo-élément) : il n'est pas lu deux
+     fois par un lecteur d'écran, qui a déjà le `role=button` de la ligne. */
+  tr.clickable td:first-child{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  /* ⚠️ LE ::before VIDE EST UN TROISIÈME ÉLÉMENT FLEX. La règle générique `td::before{content:attr(
+     data-label)}` s'applique aussi à la première cellule, qui n'a pas de `data-label` : elle produit
+     donc une boîte VIDE mais bien présente. Avec `space-between` et trois éléments, l'e-mail se
+     retrouvait centré et le chevron poussé hors de la carte sur les adresses longues. Mesuré, pas
+     supposé : la cellule allait de 48 à 327 px et l'e-mail de 102 à 263. On supprime ce pseudo
+     inutile ici — il n'affichait rien de toute façon. */
+  tr.clickable td:first-child::before{content:none}
+  tr.clickable td:first-child>.lien-fiche{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+  tr.clickable td:first-child::after{content:"\203A";flex:0 0 auto;font-size:22px;line-height:1;
+    color:var(--gold);font-weight:700;opacity:.85}
+  /* ⚠️ ICI l'en-tête EST collant. 76px = #mobile-topbar mesuré (contenu ~40 + 2×12 de padding +
+     1 de bordure ≈ 65) plus ~11 de respiration, sinon `scrollIntoView` glisse le haut de la fiche
+     DERRIÈRE le bandeau et on croit être tombé au milieu de la fiche. */
+  #player-detail-slot,#league-detail-slot{scroll-margin-top:76px}
 }
 </style>
 </head>
@@ -503,7 +535,7 @@ async function renderJoueurs(){
       <div class="row"><input type="text" id="j-search" placeholder="Rechercher par pseudo, email ou UID…" value="${esc(joueursQuery)}" style="max-width:360px">
       <button class="btn" id="j-search-btn">Rechercher</button></div>
     </div>
-    <div class="card">
+    <div class="card" id="joueurs-liste">
       ${/* ⚠️ Dernière activité : fmtRel(null) rend déjà un tiret. On n'approxime JAMAIS une
              activité absente avec la dernière connexion — un compte qui n'a pas encore émis le
              signal doit se voir comme tel.
@@ -523,7 +555,7 @@ async function renderJoueurs(){
              a toujours eu raison de s'appuyer sur l'EMAIL. */''}
       <table><thead><tr><th>Email</th><th>Ligue(s)</th><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(r=>`
-        <tr class="clickable" onclick="openPlayer('${r.user_id}')" title="Ouvrir la fiche détaillée">
+        <tr class="clickable" tabindex="0" role="button" aria-label="Ouvrir la fiche de ${esc(r.email)}" onclick="openPlayer('${r.user_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPlayer('${r.user_id}');}" title="Ouvrir la fiche détaillée">
           <td><span class="lien-fiche">${esc(r.email)}</span></td>
           <td data-label="Ligue(s)">${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
           <td data-label="Plateforme">${platLabel(r.last_platform)}</td>
@@ -636,13 +668,49 @@ function activiteHTML(a){
     <td data-label="Dernière activité">${fmtRel(a.last_active_at)}</td></tr></tbody></table>`;
 }
 
+/* ⚠️ AMENER L'ŒIL SUR LA FICHE (2026-09-28, défaut réel signalé par Hervé sur mobile).
+   Le clic partait déjà, mais la fiche se remplissait `#player-detail-slot`, TOUT EN BAS : après le
+   tableau, le paragraphe explicatif et la pagination. En carte empilée, 25 comptes font de l'ordre
+   de cinq mille pixels — sept écrans. On tapait, et rien ne bougeait devant soi.
+   ⚠️ LE SCROLL A LIEU APRÈS LE CHARGEMENT, jamais avant : arriver sur le spinner puis voir la page
+   sauter quand la fiche se déplie serait pire que de ne pas bouger. C'est aussi pour ça qu'il est
+   appelé sur le chemin d'ERREUR — une erreur invisible en bas de page ne vaut pas mieux qu'un
+   silence.
+   `scroll-margin-top` (CSS) fait le décalage sous l'en-tête collant : c'est le mécanisme prévu pour
+   ça, plus fiable qu'un calcul de position refait à la main. */
+function revelerFiche(slot){
+  if(!slot) return;
+  const doux = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try{ slot.scrollIntoView({behavior: doux?'smooth':'auto', block:'start'}); }
+  catch(e){ slot.scrollIntoView(true); }   // vieux navigateurs : pas d'options
+}
+/* Refermer la fiche et revenir à la liste, à l'endroit d'où l'on vient. Sur mobile, sans ça, on
+   reste échoué en bas de page après avoir consulté un compte. */
+function fermerFiche(idSlot, idListe){
+  const slot=document.getElementById(idSlot); if(slot) slot.innerHTML='';
+  const liste=document.getElementById(idListe);
+  if(liste) liste.scrollIntoView({block:'start'});
+  else window.scrollTo(0,0);
+}
 async function openPlayer(userId){
   const slot = document.getElementById('player-detail-slot');
   slot.innerHTML = `<div class="empty"><span class="spinner"></span> Chargement de la fiche…</div>`;
-  const d = await rpc('admin_bo_player_detail', {p_user_id:userId});
+  let d;
+  // ⚠️ UNE ERREUR DOIT SE VOIR, ELLE AUSSI. Sans ce try, une RPC en échec laissait le spinner
+  // tourner indéfiniment, sept écrans plus bas — indiscernable d'un clic qui n'a rien fait.
+  try{ d = await rpc('admin_bo_player_detail', {p_user_id:userId}); }
+  catch(e){
+    slot.innerHTML = `<div class="card" style="margin-top:16px">
+      <button class="btn small" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
+      <div class="err-msg" style="margin-top:10px">Impossible de charger cette fiche : ${esc(e && e.message ? e.message : String(e))}</div></div>`;
+    revelerFiche(slot); return;
+  }
   const c = d.compte;
   slot.innerHTML = `
     <div class="card" style="margin-top:16px">
+      ${/* Bouton EN TÊTE de fiche : sur mobile, la fiche s'ouvre en bas d'une très longue liste —
+            sans lui on reste échoué en bas de page après consultation. */''}
+      <button class="btn small" style="margin-bottom:12px" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
       <div class="between"><h2>${esc(c.email)}</h2><div class="hstack">${c.banned?tag('r','Banni'):tag('g','Actif')}${c.is_analytics_excluded?tag('n','Exclu des analytics'):''}</div></div>
       <div class="faint" style="margin-bottom:14px">UID : ${c.user_id} · Créé le ${fmtDate(c.created_at)} · Dernière connexion ${fmtRel(c.last_sign_in_at)}${c.is_analytics_excluded?' · Motif exclusion : '+esc(c.analytics_exclusion_reason||'—'):''}</div>
 
@@ -672,6 +740,7 @@ async function openPlayer(userId){
       </div>
       <div class="faint" style="margin-top:8px">« Exclure des analytics » retire ce compte des statistiques (Dashboard, Usage, Rétention, Monétisation) sans le masquer ni limiter son usage réel de l'app.</div>
     </div>`;
+  revelerFiche(slot);   // ⚠️ APRÈS le remplissage : on arrive sur la fiche, jamais sur le spinner
 }
 
 // ================================================================== LIGUES
@@ -693,10 +762,10 @@ async function renderLigues(){
         <button class="btn" id="l-search-btn">Filtrer</button>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="ligues-liste">
       <table><thead><tr><th>Code</th><th>Nom</th><th>Statut</th><th>Journée</th><th>Joueurs</th><th>Mode</th><th>Anomalies</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(l=>`
-        <tr class="clickable" onclick="openLeague('${l.id}')">
+        <tr class="clickable" tabindex="0" role="button" aria-label="Ouvrir la fiche de la ligue ${esc(l.code)}" onclick="openLeague('${l.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openLeague('${l.id}');}" title="Ouvrir la fiche détaillée">
           <td class="mono">${esc(l.code)}</td><td data-label="Nom">${esc(l.name)}</td><td data-label="Statut">${esc(l.status)}</td>
           <td data-label="Journée">${l.current_day}/${l.num_days}</td><td data-label="Joueurs">${l.nb_joueurs}</td><td data-label="Mode">${esc(l.data_mode)}/${esc(l.engine||'')}</td>
           <td data-label="Anomalies">${l.resolve_lock_bloque?tag('r','verrou bloqué'):''} ${l.sans_progression?tag('o','sans progression'):''} ${l.reviewer_gelee?tag('b','Reviewer gelée'):''}</td>
@@ -721,13 +790,25 @@ function changeLiguesPage(delta){ liguesPage=Math.max(1, liguesPage+delta); rend
 
 let CURRENT_LEAGUE_DETAIL = null;
 async function openLeague(id){
+  // ⚠️ MÊME DÉFAUT QUE LA FICHE JOUEUR, MÊME REMÈDE (2026-09-28). Cette liste-ci partage exactement
+  // le motif : ligne cliquable, fiche injectée dans un slot en bas de page, aucun scroll. Hervé n'a
+  // signalé que l'écran Joueurs, mais corriger l'un et pas l'autre reviendrait à écrire du code en
+  // plus pour laisser un défaut identique en place.
   const slot=document.getElementById('league-detail-slot');
   slot.innerHTML=`<div class="empty"><span class="spinner"></span> Chargement…</div>`;
-  const d = await rpc('admin_bo_league_detail', {p_league_id:id});
+  let d;
+  try{ d = await rpc('admin_bo_league_detail', {p_league_id:id}); }
+  catch(e){
+    slot.innerHTML = `<div class="card" style="margin-top:16px">
+      <button class="btn small" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
+      <div class="err-msg" style="margin-top:10px">Impossible de charger cette ligue : ${esc(e && e.message ? e.message : String(e))}</div></div>`;
+    revelerFiche(slot); return;
+  }
   const L=d.league;
   CURRENT_LEAGUE_DETAIL = {id:L.id, code:L.code, name:L.name, status:L.status, current_day:L.current_day, num_days:L.num_days, data_mode:L.data_mode, nb_joueurs:d.players.length};
   slot.innerHTML=`
     <div class="card" style="margin-top:16px">
+      <button class="btn small" style="margin-bottom:12px" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
       <div class="between"><h2>${esc(L.name)} — ${esc(L.code)}</h2>
         <div class="hstack">${L.resolve_lock?tag('r','resolve_lock actif'):''}${L.frozen_for_user_id && !L.day_started_at?tag('b','Reviewer gelée'):''}</div></div>
       <div class="faint" style="margin-bottom:14px">${esc(L.status)} · journée ${L.current_day}/${L.num_days} · ${esc(L.data_mode)}/${esc(L.engine||'')} · créée le ${fmtDate(L.created_at)}</div>
@@ -748,6 +829,7 @@ async function openLeague(id){
         </div>
       </div>
     </div>`;
+  revelerFiche(slot);   // ⚠️ APRÈS le remplissage, comme pour la fiche joueur
 }
 
 function actionDeleteLeague(){
