@@ -62,6 +62,12 @@ tr.clickable:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;bac
    `display:none` : il n'y a aucun bandeau à compenser ici, seulement cette respiration. La valeur
    mobile, elle, est calculée sur la hauteur du bandeau — voir la règle dans le @media plus bas. */
 #player-detail-slot,#league-detail-slot{scroll-margin-top:16px}
+/* ⚠️ LA CROIX N'EXISTE QUE SUR MOBILE, LE « RETOUR » QUE SUR LE BUREAU. Au bureau la fiche
+   s'ouvre sous le tableau : une croix y serait un faux signal (il n'y a pas de fenêtre à fermer).
+   Sur mobile c'est l'inverse — une flèche « retour » dans une fenêtre plein écran laisse croire
+   à une navigation, alors qu'on referme un panneau. */
+.fiche-fermer{display:none}
+.fiche-retour{display:inline-flex}
 /* ⚠️ La ligne etait deja cliquable, mais RIEN ne le montrait -- Herve a signale ne pas pouvoir
    ouvrir la fiche depuis la liste. Le geste existait, l'indice manquait. On donne donc a l'e-mail
    l'apparence d'un lien (souligne discret, couleur d'accent au survol de la ligne) : aucun
@@ -205,6 +211,33 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
   /* ⚠️ ICI l'en-tête EST collant. 76px = #mobile-topbar mesuré (contenu ~40 + 2×12 de padding +
      1 de bordure ≈ 65) plus ~11 de respiration, sinon `scrollIntoView` glisse le haut de la fiche
      DERRIÈRE le bandeau et on croit être tombé au milieu de la fiche. */
+  /* ═══════════ FICHE EN MODALE (mobile uniquement) ═══════════
+     `:not(:empty)` : le slot ne devient une fenêtre QUE lorsqu'il contient quelque chose. Vide, il
+     reste un div inerte de hauteur nulle — pas un voile noir sur toute la page.
+     ⚠️ `position:fixed` + `inset:0` et NON `height:100vh` : sur iOS, `100vh` compte la barre
+     d'adresse rétractée, donc le bas de la fiche passe sous le navigateur et la croix devient
+     inatteignable quand la barre réapparaît. `inset:0` suit le viewport réel.
+     ⚠️ `env(safe-area-inset-*)` : sans ça la croix se loge sous l'encoche et le bas du contenu
+     sous la barre de geste de l'iPhone. */
+  #player-detail-slot[data-modale]:not(:empty),
+  #league-detail-slot[data-modale]:not(:empty){
+    position:fixed; inset:0; z-index:200; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    background:var(--bg); scroll-margin-top:0;
+    padding:calc(env(safe-area-inset-top,0px) + 8px) calc(env(safe-area-inset-right,0px) + 12px)
+            calc(env(safe-area-inset-bottom,0px) + 24px) calc(env(safe-area-inset-left,0px) + 12px);
+  }
+  #player-detail-slot[data-modale] .card,
+  #league-detail-slot[data-modale] .card{margin-top:0}
+  /* ⚠️ LE FOND NE DOIT PAS DÉFILER DERRIÈRE. Sans ça, arrivé au bout de la fiche, iOS enchaîne sur
+     la page en dessous et on ressort à un endroit qu'on n'a pas choisi. */
+  body.fiche-ouverte{overflow:hidden}
+  .fiche-retour{display:none}
+  .fiche-fermer{display:flex; align-items:center; justify-content:center;
+    position:sticky; top:0; float:right; margin:-4px -4px 0 8px;
+    width:44px; height:44px;            /* cible tactile de 44px : la règle d'Apple, pas une marge */
+    border:1px solid var(--border); border-radius:12px;
+    background:var(--panel); color:var(--txt); font-size:20px; line-height:1; cursor:pointer}
+  .fiche-fermer:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   #player-detail-slot,#league-detail-slot{scroll-margin-top:76px}
 }
 </style>
@@ -678,20 +711,60 @@ function activiteHTML(a){
    silence.
    `scroll-margin-top` (CSS) fait le décalage sous l'en-tête collant : c'est le mécanisme prévu pour
    ça, plus fiable qu'un calcul de position refait à la main. */
-function revelerFiche(slot){
+/* ⚠️ MOBILE : LA FICHE S'OUVRE EN MODALE (2026-09-29, après essai réel d'Hervé sur iPhone).
+   La version précédente (chevron + `scrollIntoView`) marchait techniquement, mais elle laissait le
+   joueur au milieu d'une page de sept écrans : il fallait comprendre qu'on avait bougé, puis savoir
+   remonter. Une fenêtre qui se pose par-dessus ne demande rien de tout ça.
+   ⚠️ LE CONTENU N'EST PAS DUPLIQUÉ. C'est la MÊME fiche, le même HTML, le même slot : seule sa
+   présentation change, par CSS, sous 720px. Écrire deux rendus aurait garanti qu'ils divergent.
+   ⚠️ LA POSITION DE LA LISTE EST MÉMORISÉE, PAS RECALCULÉE. `scrollIntoView` sur la liste ramenait
+   en haut du tableau, pas là où on avait touché : après avoir consulté le 14ᵉ joueur, on repartait
+   du 1er. On note donc le `scrollY` exact avant d'ouvrir et on le repose à la fermeture.
+   ⚠️ LE DÉFILEMENT DE LA PAGE EST GELÉ pendant l'ouverture (`overflow:hidden` sur `body`) : sans ça
+   iOS fait défiler la page DERRIÈRE la modale quand on arrive au bout de son contenu, et on ressort
+   ailleurs. */
+let _ficheScrollY = 0, _ficheOuverte = null;
+const surMobile = () => window.matchMedia && window.matchMedia('(max-width:720px)').matches;
+
+function ouvrirFiche(slot, idSlot, idListe){
   if(!slot) return;
+  if(surMobile()){
+    if(_ficheOuverte !== idSlot){ _ficheScrollY = window.scrollY || window.pageYOffset || 0; }
+    _ficheOuverte = idSlot;
+    slot.dataset.modale = '1';
+    document.body.classList.add('fiche-ouverte');
+    // Le focus part sur la croix : au clavier comme au lecteur d'écran, on est DANS la fiche.
+    const x = slot.querySelector('.fiche-fermer');
+    if(x){ try{ x.focus({preventScroll:true}); }catch(e){ x.focus(); } }
+    slot.scrollTop = 0;
+    return;
+  }
+  // Bureau : comportement inchangé, la fiche s'ouvre sous le tableau.
   const doux = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   try{ slot.scrollIntoView({behavior: doux?'smooth':'auto', block:'start'}); }
-  catch(e){ slot.scrollIntoView(true); }   // vieux navigateurs : pas d'options
+  catch(e){ slot.scrollIntoView(true); }
 }
-/* Refermer la fiche et revenir à la liste, à l'endroit d'où l'on vient. Sur mobile, sans ça, on
-   reste échoué en bas de page après avoir consulté un compte. */
 function fermerFiche(idSlot, idListe){
-  const slot=document.getElementById(idSlot); if(slot) slot.innerHTML='';
+  const slot=document.getElementById(idSlot);
+  const etaitModale = !!(slot && slot.dataset.modale);
+  if(slot){ slot.innerHTML=''; delete slot.dataset.modale; }
+  document.body.classList.remove('fiche-ouverte');
+  _ficheOuverte = null;
+  if(etaitModale){
+    // On repose EXACTEMENT la position d'avant l'ouverture : le joueur retrouve sa ligne.
+    window.scrollTo(0, _ficheScrollY);
+    return;
+  }
   const liste=document.getElementById(idListe);
   if(liste) liste.scrollIntoView({block:'start'});
   else window.scrollTo(0,0);
 }
+/* Échap ferme la fiche ouverte — attendu de toute fenêtre, et la seule sortie au clavier si la
+   croix a perdu le focus. */
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape' || !_ficheOuverte) return;
+  fermerFiche(_ficheOuverte, _ficheOuverte==='player-detail-slot' ? 'joueurs-liste' : 'ligues-liste');
+});
 async function openPlayer(userId){
   const slot = document.getElementById('player-detail-slot');
   slot.innerHTML = `<div class="empty"><span class="spinner"></span> Chargement de la fiche…</div>`;
@@ -701,16 +774,18 @@ async function openPlayer(userId){
   try{ d = await rpc('admin_bo_player_detail', {p_user_id:userId}); }
   catch(e){
     slot.innerHTML = `<div class="card" style="margin-top:16px">
-      <button class="btn small" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
+      <button class="btn small fiche-retour" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
+      <button class="fiche-fermer" aria-label="Fermer la fiche" title="Fermer" onclick="fermerFiche('player-detail-slot','joueurs-liste')">✕</button>
       <div class="err-msg" style="margin-top:10px">Impossible de charger cette fiche : ${esc(e && e.message ? e.message : String(e))}</div></div>`;
-    revelerFiche(slot); return;
+    ouvrirFiche(slot,'player-detail-slot','joueurs-liste'); return;
   }
   const c = d.compte;
   slot.innerHTML = `
     <div class="card" style="margin-top:16px">
       ${/* Bouton EN TÊTE de fiche : sur mobile, la fiche s'ouvre en bas d'une très longue liste —
             sans lui on reste échoué en bas de page après consultation. */''}
-      <button class="btn small" style="margin-bottom:12px" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
+      <button class="btn small fiche-retour" style="margin-bottom:12px" onclick="fermerFiche('player-detail-slot','joueurs-liste')">← Retour à la liste</button>
+      <button class="fiche-fermer" aria-label="Fermer la fiche" title="Fermer" onclick="fermerFiche('player-detail-slot','joueurs-liste')">✕</button>
       <div class="between"><h2>${esc(c.email)}</h2><div class="hstack">${c.banned?tag('r','Banni'):tag('g','Actif')}${c.is_analytics_excluded?tag('n','Exclu des analytics'):''}</div></div>
       <div class="faint" style="margin-bottom:14px">UID : ${c.user_id} · Créé le ${fmtDate(c.created_at)} · Dernière connexion ${fmtRel(c.last_sign_in_at)}${c.is_analytics_excluded?' · Motif exclusion : '+esc(c.analytics_exclusion_reason||'—'):''}</div>
 
@@ -740,7 +815,7 @@ async function openPlayer(userId){
       </div>
       <div class="faint" style="margin-top:8px">« Exclure des analytics » retire ce compte des statistiques (Dashboard, Usage, Rétention, Monétisation) sans le masquer ni limiter son usage réel de l'app.</div>
     </div>`;
-  revelerFiche(slot);   // ⚠️ APRÈS le remplissage : on arrive sur la fiche, jamais sur le spinner
+  ouvrirFiche(slot,'player-detail-slot','joueurs-liste');   // ⚠️ APRÈS le remplissage : jamais sur le spinner
 }
 
 // ================================================================== LIGUES
@@ -800,15 +875,17 @@ async function openLeague(id){
   try{ d = await rpc('admin_bo_league_detail', {p_league_id:id}); }
   catch(e){
     slot.innerHTML = `<div class="card" style="margin-top:16px">
-      <button class="btn small" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
+      <button class="btn small fiche-retour" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
+      <button class="fiche-fermer" aria-label="Fermer la fiche" title="Fermer" onclick="fermerFiche('league-detail-slot','ligues-liste')">✕</button>
       <div class="err-msg" style="margin-top:10px">Impossible de charger cette ligue : ${esc(e && e.message ? e.message : String(e))}</div></div>`;
-    revelerFiche(slot); return;
+    ouvrirFiche(slot,'league-detail-slot','ligues-liste'); return;
   }
   const L=d.league;
   CURRENT_LEAGUE_DETAIL = {id:L.id, code:L.code, name:L.name, status:L.status, current_day:L.current_day, num_days:L.num_days, data_mode:L.data_mode, nb_joueurs:d.players.length};
   slot.innerHTML=`
     <div class="card" style="margin-top:16px">
-      <button class="btn small" style="margin-bottom:12px" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
+      <button class="btn small fiche-retour" style="margin-bottom:12px" onclick="fermerFiche('league-detail-slot','ligues-liste')">← Retour à la liste</button>
+      <button class="fiche-fermer" aria-label="Fermer la fiche" title="Fermer" onclick="fermerFiche('league-detail-slot','ligues-liste')">✕</button>
       <div class="between"><h2>${esc(L.name)} — ${esc(L.code)}</h2>
         <div class="hstack">${L.resolve_lock?tag('r','resolve_lock actif'):''}${L.frozen_for_user_id && !L.day_started_at?tag('b','Reviewer gelée'):''}</div></div>
       <div class="faint" style="margin-bottom:14px">${esc(L.status)} · journée ${L.current_day}/${L.num_days} · ${esc(L.data_mode)}/${esc(L.engine||'')} · créée le ${fmtDate(L.created_at)}</div>
@@ -829,7 +906,7 @@ async function openLeague(id){
         </div>
       </div>
     </div>`;
-  revelerFiche(slot);   // ⚠️ APRÈS le remplissage, comme pour la fiche joueur
+  ouvrirFiche(slot,'league-detail-slot','ligues-liste');   // ⚠️ APRÈS le remplissage, comme la fiche joueur
 }
 
 function actionDeleteLeague(){
