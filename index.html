@@ -396,7 +396,7 @@ async function render(){
 // ================================================================== DASHBOARD
 async function renderDashboard(){
   loadingMain();
-  const [health, act7] = await Promise.all([ rpc('admin_bo_health'), rpc('admin_bo_usage_summary',{p_period:'7d'}) ]);
+  const [health, act7] = await Promise.all([ rpc('admin_bo_health'), rpc('admin_bo_usage_summary',{p_period:'7d'}), chargerEcheancesAlertes() ]);
   cache.health = health;
 
   // ---- verdict global ----
@@ -510,8 +510,21 @@ async function renderDashboard(){
   document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
 }
 
+// 2026-10-05 — « Renouvelé » : avance l'échéance d'une période, après confirmation (journalisé côté serveur).
+async function echeanceRenouvelee(cle, libelle, date, perio){
+  const pas={annuelle:'1 an', semestrielle:'6 mois', mensuelle:'1 mois'}[perio]||'?';
+  if(!confirm(`Marquer « ${libelle} » comme renouvelé ?\n\nÉchéance actuelle : ${date}\nNouvelle échéance : + ${pas}`)) return;
+  try{ const r=await rpc('admin_bo_echeance_renouvelee',{p_cle:cle}); toast(`Renouvelé : prochaine échéance le ${r.nouvelle}`, true); await renderSysteme(); }
+  catch(e){ toast('Renouvellement : '+(e.message||e), false); }
+}
+// Échéances dans leur fenêtre de rappel → alertes du Dashboard (chargées à part : une absence de la RPC,
+// avant migration, ne doit jamais casser le Dashboard).
+let echeancesAlertes=[];
+async function chargerEcheancesAlertes(){ try{ echeancesAlertes=(await rpc('admin_bo_echeances_alertes'))||[]; }catch(e){ echeancesAlertes=[]; } }
 function collectAlerts(h){
   const out=[];
+  ((typeof echeancesAlertes!=='undefined' && echeancesAlertes) || []).forEach(e=> out.push({sev: e.jours<0 ? 'r' : 'o',
+    text: e.jours<0 ? `Échéance dépassée : ${e.libelle} (${e.date_echeance})` : `Échéance dans ${e.jours} jour(s) : ${e.libelle} (${e.date_echeance})${e.automatique?' — renouvellement automatique, vérifier la carte':''}`, href:'systeme'}));
   (h.jeu.ligues_bloquees||[]).forEach(l=> out.push({sev:'r', text:`Ligue ${l.code} — resolve_lock bloqué depuis plus de 15 min`, href:'ligues'}));
   (h.jeu.running_sans_progression||[]).forEach(l=> out.push({sev:'o', text:`Ligue ${l.code} — running sans progression depuis plus de 7 jours`, href:'ligues'}));
   const q=h.api.quota_dernier_releve||{};
@@ -576,6 +589,11 @@ async function renderJoueurs(){
              Un commentaire HTML placé DANS ce template literal y reste du texte : le moindre
              backtick qu'il contient REFERME la chaîne et casse tout le script. C'est exactement
              ce qui est arrivé le 2026-09-23 et a rendu le back-office muet. */''}
+      ${/* ⚠️ 2026-10-05 (décision d'Hervé) — la colonne affiche désormais les LIGUES ACTIVES du joueur
+             (nom + code, une fois chacune ; « (en attente) » pour une ligue en lobby ; « Aucune ligue
+             active » sinon) — cf. MIGRATION-admin-ligues-actives-2026-10-05.sql et ligueActivesCell().
+             Le commentaire ci-dessous (26/09) disait « noms de ligue » : c'était FAUX jusqu'au 05/10, la
+             fonction renvoyait le PSEUDO du joueur dans chaque ligue (d'où « Hervé, Hervé… »). */''}
       ${/* ⚠️ 2026-09-26 — CET EN-TÊTE MENTAIT DEPUIS LONGTEMPS. Il annonçait « Pseudo(s) »
              au-dessus d'une cellule qui rend `r.ligues`, c'est-à-dire des NOMS DE LIGUE (le
              `data-label` de la cellule, lui, disait déjà « Ligue(s) » : les deux se contredisaient).
@@ -590,7 +608,7 @@ async function renderJoueurs(){
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" tabindex="0" role="button" aria-label="Ouvrir la fiche de ${esc(r.email)}" onclick="openPlayer('${r.user_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPlayer('${r.user_id}');}" title="Ouvrir la fiche détaillée">
           <td><span class="lien-fiche">${esc(r.email)}</span></td>
-          <td data-label="Ligue(s)">${(r.ligues||[]).map(l=>esc(l.name)).join(', ')||'<span class="faint">aucune ligue</span>'}</td>
+          <td data-label="Ligue(s)">${ligueActivesCell(r.ligues)}</td>
           <td data-label="Plateforme">${platLabel(r.last_platform)}</td>
           <td data-label="Version">${r.last_app_version? esc(r.last_app_version) : '<span class="faint">—</span>'}</td>
           <td data-label="Build">${r.last_build? esc(r.last_build) : '<span class="faint">—</span>'}</td>
@@ -679,6 +697,17 @@ function optionsCompteHTML(entitlements){
 /* Libellé de plateforme, commun à la liste et à la fiche — une seule source, sinon les deux
    écrans finissent par diverger sur le même compte. */
 const PLATS_LABEL = { ios:'🍎 iOS', android:'🤖 Android', web:'🌐 Web' };
+// 2026-10-05 — cellule « Ligue(s) » : ligues ACTIVES (le serveur ne renvoie plus que celles-là). Tolère
+// l'ancienne forme ({league_id, name=pseudo}) le temps du déploiement : sans `code`, on n'affiche rien
+// de trompeur et on dit « Aucune ligue active » seulement si la liste est réellement vide.
+function ligueActivesCell(ligues){
+  const vues=new Set(), out=[];
+  for(const l of (ligues||[])){
+    const cle=l.league_id||l.code||l.name; if(vues.has(cle)) continue; vues.add(cle);
+    out.push(l.code ? `${esc(l.name||'?')} (${esc(l.code)})${l.en_attente?' <span class="faint">(en attente)</span>':''}` : esc(l.name||'?'));
+  }
+  return out.length ? out.join(', ') : '<span class="faint">Aucune ligue active</span>';
+}
 function platLabel(p){ return p ? (PLATS_LABEL[p] || esc(p)) : '<span class="faint">—</span>'; }
 
 /* ===== PLATEFORME / VERSION / BUILD / DERNIÈRE ACTIVITÉ =====================================
@@ -1112,11 +1141,18 @@ async function renderSysteme(){
 
     <div class="section-title">Échéances</div>
     <div class="card" style="margin-bottom:22px">
-      <table><thead><tr><th>Échéance</th><th>Catégorie</th><th>Date</th><th>Auto</th><th>Action requise</th></tr></thead>
+      ${/* 2026-10-05 (décision d'Hervé) — périodicité, fournisseur, coût, rappel actif (fenêtre `rappel_jours`,
+             défaut 60 j : avant, un seuil fixe de 90 j) et bouton « Renouvelé » (+1 période) pour les échéances
+             périodiques. Champs absents tant que MIGRATION-echeances-renouvellement-2026-10-05.sql n'est pas lancée. */''}
+      <table><thead><tr><th>Échéance</th><th>Catégorie</th><th>Date</th><th>Périodicité</th><th>Fournisseur</th><th>Coût</th><th>Auto</th><th>Action requise</th><th></th></tr></thead>
       <tbody>${s.echeances.map(e=>{
         const days = e.date_echeance ? Math.round((new Date(e.date_echeance)-new Date())/86400000) : null;
-        const urgent = days!=null && days<90;
-        return `<tr><td>${esc(e.libelle)}</td><td data-label="Catégorie">${esc(e.categorie)}</td><td data-label="Date">${e.date_echeance||'—'}${days!=null?` <span class="${urgent?'tag o':'faint'}" ${urgent?'':'style="background:none"'}>${days>=0?('J-'+days):'dépassée'}</span>`:''}</td><td data-label="Auto">${e.automatique?tag('g','auto'):tag('o','manuelle')}</td><td class="faint" data-label="Action requise">${esc(e.action_requise||'—')}</td></tr>`;
+        const fen = e.rappel_jours!=null ? e.rappel_jours : 90;
+        const urgent = days!=null && days<=fen;
+        const perio = e.periodicite ? ({annuelle:'Annuelle', semestrielle:'Semestrielle', mensuelle:'Mensuelle', unique:'Unique'}[e.periodicite]||esc(e.periodicite)) : '—';
+        const cout = e.cout_estime!=null ? `${String(e.cout_estime).replace('.',',')} ${esc(e.devise||'EUR')}` : '<span class="faint">à relever</span>';
+        const renouv = ['annuelle','semestrielle','mensuelle'].includes(e.periodicite) ? `<button class="btn small" onclick="echeanceRenouvelee('${esc(e.cle)}','${esc(e.libelle).replace(/'/g,'&#39;')}','${e.date_echeance||''}','${e.periodicite}')">Renouvelé</button>` : '';
+        return `<tr><td>${esc(e.libelle)}</td><td data-label="Catégorie">${esc(e.categorie)}</td><td data-label="Date">${e.date_echeance||'—'}${days!=null?` <span class="${urgent?'tag o':'faint'}" ${urgent?'':'style="background:none"'}>${days>=0?('J-'+days):'dépassée'}</span>`:''}${e.rappel_jours!=null?`<div class="faint">rappel ${e.rappel_jours} j avant</div>`:''}</td><td data-label="Périodicité">${perio}</td><td data-label="Fournisseur">${esc(e.fournisseur||'—')}</td><td data-label="Coût">${cout}</td><td data-label="Auto">${e.automatique?tag('g','auto'):tag('o','manuelle')}</td><td class="faint" data-label="Action requise">${esc(e.action_requise||'—')}</td><td>${renouv}</td></tr>`;
       }).join('')}</tbody></table>
     </div>
 
