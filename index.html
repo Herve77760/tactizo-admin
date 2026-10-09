@@ -430,9 +430,9 @@ async function renderDashboard(){
      vraie alerte existe : (1) exposer cette échéance dans `admin_bo_health()` ; (2) choisir CE QUI
      est anormal : un duel encore sans affiches APRÈS l'échéance, donc un filet qui n'a pas agi.
      ⚠️ (2026-09-23, second temps) — LES DEUX POINTS SONT FAITS. `admin_bo_health()` expose
-     désormais `duels_sans_fixtures_en_retard`, calculé avec `tml_sel_deadline()` : la MÊME règle
-     que le filet (`selDeadlineMs`, FAST 12 h / Classique 24 h sur `day_started_at`), posée une
-     seule fois en SQL au lieu d'être recopiée une troisième fois.
+     désormais `duels_sans_fixtures_en_retard`, calculé avec l'échéance DU DUEL (v8.532, rythme unique :
+     `tml_echeance_selection_duel()`, repli sur l'ancien calcul pour une journée héritée) : la MÊME règle
+     que le filet (`ensure-fixtures-reelles`), posée une seule fois en SQL.
      On était passé d'une fausse alerte à un SILENCE — un filet en panne ne se voyait nulle part.
      Désormais : gris tant qu'on attend dans les temps, orange dès qu'une échéance est dépassée.
      ⚠️ GRIS, PAS VERT quand on attend : vert dirait « toutes les affiches sont présentes », faux.
@@ -910,6 +910,8 @@ async function openLeague(id){
     ouvrirFiche(slot,'league-detail-slot','ligues-liste'); return;
   }
   const L=d.league;
+  // v8.532 — rythme unique : échéances de la journée, par duel (fonction absente tant que la migration n'est pas passée → bloc omis).
+  let ry=null; try{ ry = await rpc('admin_bo_rythme_journee', {p_league:id}); }catch(e){ ry=null; }
   CURRENT_LEAGUE_DETAIL = {id:L.id, code:L.code, name:L.name, status:L.status, current_day:L.current_day, num_days:L.num_days, data_mode:L.data_mode, nb_joueurs:d.players.length};
   slot.innerHTML=`
     <div class="card" style="margin-top:16px">
@@ -927,6 +929,16 @@ async function openLeague(id){
       <table><thead><tr><th>Jour</th><th>Affiches</th><th>Résolu</th><th>Date résolution</th></tr></thead>
       <tbody>${d.duels.map(du=>`<tr><td>Journée ${du.day+1}</td><td data-label="Affiches">${du.nb_fixtures}</td><td data-label="Résolu">${du.resolved?'✓':'—'}</td><td data-label="Date résolution">${fmtDate(du.resolved_at)}</td></tr>`).join('')}</tbody></table>
 
+      ${ry && (L.status==='running'||L.status==='resolving') ? rythmeJourneeHTML(ry) : ''}
+
+      ${L.status==='truce'?`<div class="section-title">Trêve en cours</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="hstack">
+          <button class="btn" onclick="actionCloturerTreve()">🔓 Clôturer la trêve (secours)</button>
+          <div class="faint">Normalement automatique (tous les joueurs ont validé, ou échéance de 24 h). À n'utiliser qu'en secours : les joueurs qui n'ont pas validé repartent sans les bonus de la trêve.</div>
+        </div>
+      </div>`:''}
+
       <div class="section-title">Zone sensible</div>
       <div class="card" style="border-color:var(--red);margin-bottom:0">
         <div class="hstack">
@@ -936,6 +948,68 @@ async function openLeague(id){
       </div>
     </div>`;
   ouvrirFiche(slot,'league-detail-slot','ligues-liste');   // ⚠️ APRÈS le remplissage, comme la fiche joueur
+}
+
+// v8.532 (09/10/2026, plan validé par Hervé) — « RYTHME DE LA JOURNÉE ». Le rythme unique pose une échéance
+// de sélection PAR DUEL (au moins 12 h, et au moins 6 h utiles 7 h-minuit dans le fuseau du joueur à domicile,
+// figé au début de journée). Cette section montre, sans rien recalculer (tout vient de admin_bo_rythme_journee) :
+// début de journée, fin minimale (T0 + 12 h), fuseau retenu, heures utiles, échéance et sa raison, heure réelle du
+// choix, premier coup d'envoi et temps réel laissé pour pronostiquer.
+function rythmeJourneeHTML(r){
+  const raisons={ '12h':'12 h', '6h_utiles':'6 h utiles', 'ia':'domicile IA', 'forcee':'fin forcée (simulé)', 'ancien rythme':'ancien rythme' };
+  const raison=x=>{ x=x||''; if(x.startsWith('raccourcie:')) return 'raccourcie (garde-fou) : '+x.slice(11); return raisons[x]||x; };
+  const par={ domicile:'joueur', autre:'app d\'un autre joueur', serveur:'tirage automatique', ia:'IA' };
+  const fuseau=d=>d.fuseau?(esc(d.fuseau)+(d.fuseau_source==='defaut'?' <span class="faint">(Paris par défaut)</span>':'')):(d.ia?'—':'<span class="faint">ancien rythme</span>');
+  return `<div class="section-title">Rythme de la journée ${r.jour+1}</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="faint" style="margin-bottom:8px">${r.heritee?tag('n','ancien rythme (journée démarrée avant la bascule)'):tag('g','rythme unique')}
+          Début ${fmtDate(r.t0)} · fin minimale (T0 + 12 h) ${fmtDate(r.fin_fast_min)} · échéance la plus tardive ${fmtDate(r.echeance_max)} · 1er match éligible ${fmtDate(r.premier_match_eligible)}</div>
+        <table><thead><tr><th>Domicile</th><th>Fuseau</th><th>Heures utiles</th><th>Échéance</th><th>Raison</th><th>Choix</th><th>1er coup d'envoi</th><th>Temps de pronos</th></tr></thead>
+        <tbody>${(r.duels||[]).map(d=>`<tr><td>${esc(d.domicile)}${d.ia?' 🤖':''} <span class="faint">vs ${esc(d.exterieur||'?')}</span></td>
+          <td data-label="Fuseau">${fuseau(d)}</td>
+          <td data-label="Heures utiles">${d.heures_utiles!=null?d.heures_utiles+' h':'—'}</td>
+          <td data-label="Échéance">${fmtDate(d.echeance)}</td>
+          <td data-label="Raison">${esc(raison(d.raison))}</td>
+          <td data-label="Choix">${d.choix_a?fmtDate(d.choix_a)+' <span class="faint">('+esc(par[d.choix_par]||d.choix_par||'?')+')</span>':'—'}</td>
+          <td data-label="1er coup d'envoi">${fmtDate(d.premier_coup_envoi)}</td>
+          <td data-label="Temps de pronos">${d.pronos_h!=null?d.pronos_h+' h':'—'}</td></tr>`).join('')}</tbody></table>
+      </div>`;
+}
+
+// v8.531 (09/10/2026, Hervé) — CLÔTURE DE SECOURS DE LA TRÊVE, back-office UNIQUEMENT (le bouton
+// organisateur a été retiré de l'app). Même garde que la suppression : mot de passe admin + motif,
+// journalisé (admin_bo_log 'cloturer_treve'). Côté serveur : admin_bo_cloturer_treve() avance l'échéance
+// puis appelle resolve_treve() — même attribution des bonus qu'une clôture normale.
+function actionCloturerTreve(){
+  const L = CURRENT_LEAGUE_DETAIL;
+  if(!L || L.status!=='truce') return;
+  const ov=document.createElement('div'); ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal">
+    <h3>🔓 Clôturer la trêve maintenant</h3>
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px">${esc(L.name)} — <span class="mono">${esc(L.code)}</span></div>
+      <div class="faint">Journée ${L.current_day}/${L.num_days} · ${L.data_mode==='real'?'Ligue RÉELLE':'Ligue simulée'} · ${L.nb_joueurs} joueur(s)</div>
+    </div>
+    <div style="font-size:13px;margin-bottom:14px">Les joueurs qui n'ont pas validé leurs enchères repartiront <b>sans</b> les bonus rachetés à la trêve. La ligue reprend aussitôt.</div>
+    <div class="field"><label>Mot de passe admin (confirmation)</label><input type="password" id="ct-pass"></div>
+    <div class="field"><label>Motif (obligatoire, conservé dans le journal)</label><input type="text" id="ct-reason"></div>
+    <div class="hstack" style="justify-content:flex-end"><button class="btn" id="ct-cancel">Annuler</button><button class="btn danger" id="ct-ok">Clôturer la trêve</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#ct-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#ct-ok').onclick=async ()=>{
+    const pass=document.getElementById('ct-pass').value;
+    const reason=document.getElementById('ct-reason').value.trim();
+    if(!pass){ toast('Mot de passe requis.', false); return; }
+    if(!reason){ toast('Motif requis.', false); return; }
+    const btn=ov.querySelector('#ct-ok'); btn.disabled=true; btn.textContent='Clôture…';
+    try{
+      const code = await rpc('admin_bo_cloturer_treve', {p_admin_id:ME.id, p_admin_password:pass, p_league_id:L.id, p_reason:reason});
+      ov.remove();
+      toast(code==='ok' ? 'Trêve clôturée.' : (code==='deja_resolue'||code==='pas_en_treve' ? 'La trêve était déjà close.' : 'Résultat : '+code), code==='ok');
+      renderLigues();
+    }catch(e){ toast('Échec : '+(e.message||e), false); btn.disabled=false; btn.textContent='Clôturer la trêve'; }
+  };
 }
 
 function actionDeleteLeague(){
@@ -1044,8 +1118,8 @@ async function renderUsage(){
         ${tag('n','Solo : '+det.solo_vs_amis.solo)} ${tag('n','Entre amis : '+det.solo_vs_amis.entre_amis)}</div>
       <div class="card"><div class="section-title" style="margin-top:0">Réel vs Simulé</div>
         ${Object.entries(det.reel_vs_simule||{}).map(([k,v])=>tag('n',k+' : '+v)).join(' ')||nd()}</div>
-      <div class="card"><div class="section-title" style="margin-top:0">Répartition formule</div>
-        ${Object.entries(det.repartition_formule||{}).map(([k,v])=>tag('n',(k||'—')+' : '+v)).join(' ')||nd()}</div>
+      <div class="card"><div class="section-title" style="margin-top:0">Rythme unique</div>
+        ${det.rythme_journees_heritees!=null?tag(det.rythme_journees_heritees?'n':'g','Journées encore à l\'ancien rythme : '+det.rythme_journees_heritees):(det.repartition_formule?Object.entries(det.repartition_formule).map(([k,v])=>tag('n',(k||'—')+' : '+v)).join(' '):nd())}</div>
     </div>
 
     <div class="grid grid-2" style="margin-bottom:22px">
