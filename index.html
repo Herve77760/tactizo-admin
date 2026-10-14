@@ -87,8 +87,9 @@ tr.clickable:hover .lien-fiche{text-decoration-color:currentColor;color:var(--ac
 .btn.danger{background:var(--red);border-color:var(--red);color:#fff}
 .btn.small{padding:4px 10px;font-size:12px}
 .btn[disabled]{opacity:.5;cursor:default}
-input[type=text],input[type=password],input[type=number],input[type=email],select{
+input[type=text],input[type=password],input[type=number],input[type=email],select,textarea{
   padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);width:100%}
+textarea{resize:vertical;min-height:64px}
 .row{display:flex;gap:10px;align-items:center}
 .between{display:flex;align-items:center;justify-content:space-between}
 .hstack{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -167,7 +168,7 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
 @media (max-width:880px){
   .btn{min-height:40px;padding:9px 14px}
   .btn.small{min-height:34px;padding:6px 12px}
-  input[type=text],input[type=password],input[type=number],input[type=email],select{font-size:16px;min-height:40px}
+  input[type=text],input[type=password],input[type=number],input[type=email],select,textarea{font-size:16px;min-height:40px}
   .row,.hstack{flex-wrap:wrap}
 }
 @media (max-width:480px){
@@ -270,6 +271,7 @@ input[type=text],input[type=password],input[type=number],input[type=email],selec
     <a class="navlink" data-view="monetisation">💰 Monétisation</a>
     <a class="navlink" data-view="systeme">🖥️ Système</a>
     <a class="navlink" data-view="journal">📜 Journal admin</a>
+    <a class="navlink" data-view="rush">⚡ Rush — neutralisation</a>
     <div id="navspacer"></div>
     <a class="navlink" id="logout-link">↩ Déconnexion</a>
   </div>
@@ -387,6 +389,7 @@ async function render(){
     else if(VIEW==='monetisation') await renderMonetisation();
     else if(VIEW==='systeme') await renderSysteme();
     else if(VIEW==='journal') await renderJournal();
+    else if(VIEW==='rush') await renderRush();
     else await renderDashboard();
   }catch(e){
     setMain(`<div class="card"><b>Erreur de chargement</b><div class="muted" style="margin-top:6px">${esc(e.message||e)}</div></div>`);
@@ -1250,6 +1253,230 @@ async function renderJournal(){
       <tbody>${data.length? data.map(a=>`<tr><td>${fmtDate(a.created_at)}</td><td class="mono" data-label="Action">${esc(a.action)}</td><td data-label="Cible">${esc(a.target_type||'')} ${esc(a.target_id||'')}</td><td data-label="Motif">${esc(a.reason||'—')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">Aucune action journalisée pour l'instant.</div></td></tr>`}</tbody></table>
     </div>
   `);
+}
+
+// ================================================================== RUSH — NEUTRALISATION D'UNE RENCONTRE
+// Lot F3 (14/10/2026, Hervé) — neutraliser à la main une rencontre Rush (match annulé, données fausses…) :
+// tous les duels engagés dessus sont neutralisés côté serveur, en un seul appel journalisé.
+// Parcours : liste/recherche → aperçu (identité PRÉCISE de la rencontre + duels concernés) → motif
+// obligatoire (≥ 10 caractères) → boîte de confirmation récapitulative → appel → résultat.
+// ⚠️ LE SERVEUR FAIT FOI : les 4 RPC vérifient elles-mêmes auth.uid() = tml_admin_id(), refusent un motif
+// vide et une rencontre déjà réglée. Les contrôles d'ici évitent seulement les fausses manœuvres.
+// ⚠️ LE JETON DE L'APERÇU EST LA CONFIRMATION : rush_admin_neutraliser() refuse (confirmation_perimee) si
+// les duels ont changé depuis l'aperçu. On ne neutralise donc jamais autre chose que ce qui a été affiché.
+// ⚠️ MIGRATION RUSH V6 PAS ENCORE EN PRODUCTION : sans elle, PostgREST répond que la fonction est introuvable.
+// L'écran l'affiche (« Moteur Rush V6 non installé ») et le reste du back-office n'en sait rien.
+const RUSH_MOTIF_MIN = 10;
+let rushRecherche = '';
+let RUSH_APERCU = null;      // dernier aperçu reçu du serveur (porte le jeton de confirmation)
+let rushEnCours = false;     // verrou anti double-clic pendant l'appel de neutralisation
+
+// PostgREST : PGRST202 (fonction absente du cache de schéma) ; Postgres : 42883 (fonction inexistante).
+function rushNonInstalle(e){
+  if(!e) return false;
+  if(e.code==='PGRST202' || e.code==='42883') return true;
+  return /could not find the function|function [^ ]*rush_admin_[a-z_]+.* does not exist/i.test(String(e.message||e));
+}
+function rushNonInstalleHTML(){
+  return `<div id="topbar"><h1>Rush — neutralisation d'une rencontre</h1></div>
+    <div class="card"><b>Moteur Rush V6 non installé</b>
+      <div class="muted" style="margin-top:6px">Les fonctions de neutralisation n'existent pas encore sur la base (migration Rush V6 non appliquée). Rien n'est modifiable ici tant qu'elle ne l'est pas ; le reste du back-office n'est pas concerné.</div></div>`;
+}
+// Le motif est conservé dans le journal : on compte les caractères utiles, pas les espaces autour.
+function rushMotifValide(m){ return String(m==null?'':m).trim().length >= RUSH_MOTIF_MIN; }
+// Messages des codes de refus renvoyés par le serveur ({ok:false, code}).
+function rushErreurMessage(code){
+  const M = {
+    non_admin: 'Accès refusé : ce compte n\'est pas administrateur (contrôle serveur).',
+    motif_requis: 'Motif refusé par le serveur : il est obligatoire (' + RUSH_MOTIF_MIN + ' caractères minimum).',
+    confirmation_perimee: 'Confirmation périmée : les duels ont changé depuis l\'affichage de l\'aperçu. Recharge l\'aperçu, vérifie-le, puis recommence.',
+    deja_regle: 'Rencontre déjà réglée : neutralisation impossible, voir procédure exceptionnelle.',
+    rencontre_inconnue: 'Rencontre inconnue : elle n\'existe pas (ou plus). Recharge la liste.',
+    coupe: 'Rush est coupé (interrupteur général) : neutralisation impossible tant qu\'il n\'est pas rouvert.'
+  };
+  return M[code] || ('Refus du serveur : ' + (code || 'réponse inattendue') + '.');
+}
+// Champs jsonb dont la forme peut varier (bonus, engagements, résultat) : toujours rendus en TEXTE échappé.
+function rushTexte(v){
+  if(v==null || v==='') return '—';
+  if(Array.isArray(v)) return v.length ? v.map(x=>typeof x==='object'&&x!==null?JSON.stringify(x):String(x)).join(', ') : '—';
+  if(typeof v==='object') return JSON.stringify(v);
+  return String(v);
+}
+function rushOuiNon(b){ return b ? tag('o','oui') : tag('n','non'); }
+function rushIdentiteHTML(r){
+  return `<table class="plain">
+      <tr><td class="muted" style="width:190px">Sport</td><td>${esc(r.sport||'—')}</td></tr>
+      <tr><td class="muted">Compétition</td><td>${esc(r.competition||'—')}</td></tr>
+      <tr><td class="muted">Rencontre</td><td><b>${esc(r.domicile||'?')}</b> — <b>${esc(r.exterieur||'?')}</b></td></tr>
+      <tr><td class="muted">Heure de référence</td><td>${fmtDate(r.heure_reference)}</td></tr>
+      <tr><td class="muted">Identifiant d'événement</td><td class="mono">${esc(r.ev_id||'—')}</td></tr>
+      <tr><td class="muted">Statut</td><td>${tag('n', r.statut||'—')}</td></tr>
+      <tr><td class="muted">Identifiant interne</td><td class="mono faint">${esc(r.id||'—')}</td></tr>
+    </table>`;
+}
+
+// ⚠️ IDENTIFIANT EN data-*, JAMAIS DANS LE CODE DE onclick : esc() change ' en &#39;, que le navigateur
+// redécode AVANT d'exécuter l'attribut — une valeur interpolée dans onclick="f('…')" reste injectable.
+function rushRencontresHTML(liste){
+  if(!liste || !liste.length) return `<div class="empty">Aucune rencontre engagée${rushRecherche?' pour « '+esc(rushRecherche)+' »':''}.</div>`;
+  return `<table><thead><tr><th>Rencontre</th><th>Sport</th><th>Compétition</th><th>Heure de référence</th><th>Statut</th><th>Duels</th></tr></thead>
+    <tbody>${liste.map(r=>`<tr class="clickable" tabindex="0" role="button" data-rencontre="${esc(r.id)}" onclick="rushOuvrirApercu(this.dataset.rencontre)" onkeydown="if(event.key==='Enter')rushOuvrirApercu(this.dataset.rencontre)">
+      <td><span class="lien-fiche">${esc(r.domicile||'?')} — ${esc(r.exterieur||'?')}</span></td>
+      <td data-label="Sport">${esc(r.sport||'—')}</td><td data-label="Compétition">${esc(r.competition||'—')}</td>
+      <td data-label="Heure de référence">${fmtDate(r.heure_reference)}</td><td data-label="Statut">${tag('n', r.statut||'—')}</td>
+      <td data-label="Duels">${fmtNum(r.nb_engagements)} <span class="faint">(${fmtNum(r.nb_resolus)} réglé(s))</span></td></tr>`).join('')}</tbody></table>`;
+}
+
+function rushApercuHTML(a){
+  const r = a.rencontre || {}, duels = a.duels || [];
+  const ok = a.neutralisable === true;
+  return `<div class="card" style="margin-top:16px">
+    <div class="between"><h2>Aperçu de la neutralisation</h2><button class="btn small" data-rencontre="${esc(r.id)}" onclick="rushOuvrirApercu(this.dataset.rencontre)">↻ Recharger l'aperçu</button></div>
+    ${rushIdentiteHTML(r)}
+    <div class="section-title">Duels concernés (${duels.length})</div>
+    <table><thead><tr><th>Joueur</th><th>Mode</th><th>Statut</th><th>Réglé</th><th>Découvert</th><th>Mise</th><th>Bonus</th></tr></thead>
+    <tbody>${duels.length ? duels.map(d=>`<tr><td>${esc(d.pseudo||'?')} <span class="faint mono">${esc(String(d.joueur_id||'').slice(0,8))}</span></td>
+      <td data-label="Mode">${esc(d.mode||'—')}</td><td data-label="Statut">${tag('n', d.statut||'—')}</td>
+      <td data-label="Réglé">${rushOuiNon(d.resolu)}</td><td data-label="Découvert">${rushOuiNon(d.decouvert)}</td>
+      <td data-label="Mise">${esc(rushTexte(d.mise))}</td><td data-label="Bonus">${esc(rushTexte(d.bonus))}</td></tr>`).join('')
+      : `<tr><td colspan="7"><div class="empty">Aucun duel engagé sur cette rencontre.</div></td></tr>`}</tbody></table>
+    <div class="section-title">Neutraliser</div>
+    ${ok ? '' : `<div class="err-msg" id="rush-refus" style="margin:0 0 10px">Neutralisation impossible : ${esc(a.raison_refus||'refusée par le serveur')}</div>`}
+    <div class="field"><label>Motif (obligatoire, ${RUSH_MOTIF_MIN} caractères minimum, conservé dans le journal)</label>
+      <textarea id="rush-motif" maxlength="500" ${ok?'':'disabled'} oninput="rushMotifCompteur()"></textarea>
+      <div class="faint" id="rush-motif-compteur">0 / ${RUSH_MOTIF_MIN} minimum</div></div>
+    <div class="hstack"><button class="btn danger" id="rush-neutraliser" ${ok?'':'disabled'} onclick="rushDemanderNeutralisation()">Neutraliser cette rencontre…</button></div>
+    <div id="rush-resultat" style="margin-top:12px"></div>
+  </div>`;
+}
+
+function rushJournalHTML(j){
+  if(!j || !j.length) return `<div class="empty">Aucune neutralisation journalisée.</div>`;
+  return `<table><thead><tr><th>Date</th><th>Auteur</th><th>Rencontre</th><th>Motif</th><th>Engagements</th><th>Résultat</th></tr></thead>
+    <tbody>${j.map(x=>`<tr><td>${fmtDate(x.at)} <span class="faint mono">#${esc(x.id)}</span></td><td data-label="Auteur">${esc(rushTexte(x.auteur))}</td>
+      <td data-label="Rencontre" class="mono">${esc(rushTexte(x.rencontre))}</td><td data-label="Motif">${esc(x.motif||'—')}</td>
+      <td data-label="Engagements">${Array.isArray(x.engagements)?fmtNum(x.engagements.length):esc(rushTexte(x.engagements))}</td>
+      <td data-label="Résultat" class="faint">${esc(rushTexte(x.resultat))}</td></tr>`).join('')}</tbody></table>`;
+}
+
+async function renderRush(){
+  loadingMain();
+  RUSH_APERCU = null;
+  let liste, journal;
+  try{
+    [liste, journal] = await Promise.all([ rpc('rush_admin_rencontres_engagees', {p_recherche: rushRecherche||null}), rpc('rush_admin_neutralisations_journal', {p_limite:50}) ]);
+  }catch(e){
+    if(rushNonInstalle(e)){ setMain(rushNonInstalleHTML()); return; }
+    throw e;
+  }
+  setMain(`
+    <div id="topbar"><h1>Rush — neutralisation d'une rencontre</h1><div class="faint">Réservé à l'administrateur · chaque neutralisation est journalisée</div></div>
+    <div class="hstack" style="margin-bottom:12px">
+      <input type="text" id="rush-recherche" placeholder="Équipe, compétition, identifiant…" style="max-width:340px" value="${esc(rushRecherche)}" onkeydown="if(event.key==='Enter')rushChercher()">
+      <button class="btn" onclick="rushChercher()">Rechercher</button>
+    </div>
+    <div class="card" id="rush-liste">${rushRencontresHTML(liste)}</div>
+    <div id="rush-apercu-slot"></div>
+    <div class="section-title">Journal des neutralisations</div>
+    <div class="card" id="rush-journal">${rushJournalHTML(journal)}</div>
+  `);
+}
+async function rushChercher(){
+  const champ = document.getElementById('rush-recherche');
+  rushRecherche = champ ? champ.value.trim() : '';
+  const slot = document.getElementById('rush-liste');
+  try{ slot.innerHTML = rushRencontresHTML(await rpc('rush_admin_rencontres_engagees', {p_recherche: rushRecherche||null})); }
+  catch(e){ if(rushNonInstalle(e)){ setMain(rushNonInstalleHTML()); return; } toast('Recherche impossible : '+(e.message||e), false); }
+}
+async function rushRafraichirJournal(){
+  const slot = document.getElementById('rush-journal'); if(!slot) return;
+  try{ slot.innerHTML = rushJournalHTML(await rpc('rush_admin_neutralisations_journal', {p_limite:50})); }catch(e){ /* le résultat déjà affiché fait foi */ }
+}
+async function rushOuvrirApercu(id){
+  const slot = document.getElementById('rush-apercu-slot');
+  if(!slot || !id) return;
+  RUSH_APERCU = null;
+  slot.innerHTML = '<div class="empty"><span class="spinner"></span> Chargement de l\'aperçu…</div>';
+  let a;
+  try{ a = await rpc('rush_admin_neutralisation_apercu', {p_rencontre:id}); }
+  catch(e){
+    if(rushNonInstalle(e)){ setMain(rushNonInstalleHTML()); return; }
+    slot.innerHTML = `<div class="card" style="margin-top:16px"><div class="err-msg">Aperçu impossible : ${esc(e.message||e)}</div></div>`; return;
+  }
+  if(!a || a.ok!==true){
+    slot.innerHTML = `<div class="card" style="margin-top:16px"><div class="err-msg">${esc(rushErreurMessage(a&&a.code))}</div></div>`; return;
+  }
+  RUSH_APERCU = a;
+  slot.innerHTML = rushApercuHTML(a);
+  slot.scrollIntoView && slot.scrollIntoView({block:'start', behavior:'smooth'});
+}
+function rushMotifCompteur(){
+  const m = document.getElementById('rush-motif'), c = document.getElementById('rush-motif-compteur');
+  if(m && c) c.textContent = m.value.trim().length + ' / ' + RUSH_MOTIF_MIN + ' minimum';
+}
+// ÉTAPE 1 (bouton « Neutraliser… ») : ne fait AUCUN appel d'écriture. Vérifie le motif, puis ouvre la
+// boîte de confirmation. ⚠️ Le motif est figé ici : celui qu'on relit dans la boîte est celui qui part.
+function rushDemanderNeutralisation(){
+  const a = RUSH_APERCU;
+  const res = document.getElementById('rush-resultat');
+  if(!a || a.ok!==true || !a.jeton){ toast('Recharge l\'aperçu avant de neutraliser.', false); return; }
+  if(a.neutralisable!==true){ if(res) res.innerHTML = `<div class="err-msg">Neutralisation impossible : ${esc(a.raison_refus||'refusée par le serveur')}</div>`; return; }
+  const motif = (document.getElementById('rush-motif')||{value:''}).value.trim();
+  if(!rushMotifValide(motif)){
+    if(res) res.innerHTML = `<div class="err-msg">Motif trop court : ${RUSH_MOTIF_MIN} caractères minimum (${motif.length} saisi(s)).</div>`;
+    toast('Motif obligatoire ('+RUSH_MOTIF_MIN+' caractères minimum).', false); return;
+  }
+  const r = a.rencontre || {}, n = (a.duels||[]).length;
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='rush-confirmation';
+  ov.innerHTML=`<div class="modal">
+    <h3>⚠️ Confirmer la neutralisation</h3>
+    <div class="card" style="background:var(--red-bg);margin-bottom:14px">
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px">${esc(r.domicile||'?')} — ${esc(r.exterieur||'?')}</div>
+      <div class="faint">${esc(r.sport||'—')} · ${esc(r.competition||'—')} · ${fmtDate(r.heure_reference)} · événement <span class="mono">${esc(r.ev_id||'—')}</span> · statut ${esc(r.statut||'—')}</div>
+    </div>
+    <div style="font-size:13px;margin-bottom:10px"><b>${n} duel(s)</b> seront neutralisés.</div>
+    <div class="field"><label>Motif</label><div class="card" style="padding:10px 12px;white-space:pre-wrap" id="rush-conf-motif">${esc(motif)}</div></div>
+    <label class="hstack" style="font-size:13px;margin-bottom:14px"><input type="checkbox" id="rush-conf-case"> J'ai vérifié la rencontre et les ${n} duel(s) ci-dessus.</label>
+    <div class="hstack" style="justify-content:flex-end"><button class="btn" id="rush-conf-annuler">Annuler</button><button class="btn danger" id="rush-conf-ok">Neutraliser définitivement</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#rush-conf-annuler').onclick=()=>ov.remove();
+  ov.querySelector('#rush-conf-ok').onclick=async ()=>{
+    if(!ov.querySelector('#rush-conf-case').checked){ toast('Coche la case de vérification pour confirmer.', false); return; }
+    const btn=ov.querySelector('#rush-conf-ok'); btn.disabled=true; btn.textContent='Neutralisation…';
+    const fini = await rushNeutraliser(a, motif, true);
+    if(fini) ov.remove(); else { btn.disabled=false; btn.textContent='Neutraliser définitivement'; }
+  };
+}
+// ÉTAPE 2 (seulement depuis la boîte de confirmation). Renvoie true si la boîte peut se fermer (réponse
+// du serveur affichée), false si l'appel n'a pas abouti (réseau…) et qu'on peut réessayer.
+async function rushNeutraliser(a, motif, confirme){
+  if(confirme!==true || !a || !a.jeton || !rushMotifValide(motif) || rushEnCours) return false;
+  rushEnCours = true;
+  const res = document.getElementById('rush-resultat');
+  let r;
+  try{ r = await rpc('rush_admin_neutraliser', {p_rencontre:a.rencontre.id, p_motif:motif, p_confirmation:a.jeton}); }
+  catch(e){
+    rushEnCours = false;
+    if(rushNonInstalle(e)){ document.querySelectorAll('#rush-confirmation').forEach(x=>x.remove()); setMain(rushNonInstalleHTML()); return true; }
+    toast('Échec : '+(e.message||e), false); return false;
+  }
+  rushEnCours = false;
+  if(r && r.ok===true){
+    if(res) res.innerHTML = `<div class="card" style="background:var(--green-bg)"><b>Rencontre neutralisée.</b>
+      <div class="muted" style="margin-top:4px">${fmtNum(r.neutralises)} duel(s) neutralisé(s) · ${fmtNum(r.deja)} déjà neutralisé(s) · journal <span class="mono">#${esc(r.journal_id)}</span></div></div>`;
+    const btn = document.getElementById('rush-neutraliser'); if(btn) btn.disabled = true;
+    RUSH_APERCU = null;   // le jeton est consommé : toute nouvelle tentative repasse par un aperçu
+    toast('Rencontre neutralisée.', true);
+    rushRafraichirJournal();
+    return true;
+  }
+  const code = r && r.code;
+  if(res) res.innerHTML = `<div class="err-msg" data-code="${esc(code||'')}">${esc(rushErreurMessage(code))}</div>`
+    + (code==='confirmation_perimee' ? `<button class="btn small" style="margin-top:8px" data-rencontre="${esc(a.rencontre.id)}" onclick="rushOuvrirApercu(this.dataset.rencontre)">↻ Recharger l'aperçu</button>` : '');
+  toast(rushErreurMessage(code), false);
+  return true;
 }
 
 // ================================================================== actions sensibles (confirmation + mot de passe + audit)
