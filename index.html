@@ -271,6 +271,7 @@ textarea{resize:vertical;min-height:64px}
     <a class="navlink" data-view="monetisation">💰 Monétisation</a>
     <a class="navlink" data-view="systeme">🖥️ Système</a>
     <a class="navlink" data-view="journal">📜 Journal admin</a>
+    <a class="navlink" data-view="rushtb">⚡ Rush — tableau de bord</a>
     <a class="navlink" data-view="rush">⚡ Rush — neutralisation</a>
     <div id="navspacer"></div>
     <a class="navlink" id="logout-link">↩ Déconnexion</a>
@@ -389,6 +390,7 @@ async function render(){
     else if(VIEW==='monetisation') await renderMonetisation();
     else if(VIEW==='systeme') await renderSysteme();
     else if(VIEW==='journal') await renderJournal();
+    else if(VIEW==='rushtb') await renderRushTableau();
     else if(VIEW==='rush') await renderRush();
     else await renderDashboard();
   }catch(e){
@@ -1360,6 +1362,36 @@ function rushJournalHTML(j){
       <td data-label="Résultat" class="faint">${esc(rushTexte(x.resultat))}</td></tr>`).join('')}</tbody></table>`;
 }
 
+// 30/10/2026 (Hervé) — ⚡ Rush — tableau de bord : joueurs, activité, crédits Odds, options (admin_bo_rush_tableau, lecture seule).
+async function renderRushTableau(){
+  loadingMain();
+  let d;
+  try{ d = await rpc('admin_bo_rush_tableau'); }
+  catch(e){ setMain(`<div class="card"><b>Tableau Rush indisponible</b><div class="muted" style="margin-top:6px">${esc(e.message||e)}</div></div>`); return; }
+  const J=d.joueurs||[], A=d.activite||[], O=d.odds||{}, P=d.options||[];
+  const div=n=>n===1?'Élite':(n?'D'+n:'—');
+  const restant=O.restant, forfait=O.forfait||20000, conso=restant==null?null:forfait-restant;
+  const pct=conso==null?null:Math.round(conso*100/forfait);
+  const usages=O.par_usage||[], total30=usages.reduce((s,u)=>s+(+u.credits||0),0);
+  setMain(`
+    <div id="topbar"><h1>Rush — tableau de bord</h1><div class="faint">${J.length} joueur(s) Rush Réel · ${d.actifs_7j||0} actif(s) sur 7 jours</div></div>
+    <div class="section-title">Joueurs Rush</div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Pseudo</th><th>Division</th><th>Saison</th><th>Points</th><th>Duels</th><th>Meilleure</th><th>Paris Réel 7 j</th><th>Fictif 7 j</th><th>Dernier pari</th><th>Abonnés</th><th>Suivis</th></tr></thead>
+      <tbody>${J.map(j=>`<tr><td>${esc(j.pseudo)}</td><td>${div(j.division)}</td><td>${j.saison??'—'}</td><td>${j.points??'—'}</td><td>${j.duels!=null?j.duels+'/10':'—'}</td><td>${div(j.meilleure)}</td><td>${j.reel_7j||0}</td><td>${j.fictif_7j||0}</td><td>${fmtDate(j.dernier_pari)}</td><td>${j.abonnes||0}</td><td>${j.suivis||0}</td></tr>`).join('')||`<tr><td colspan="11"><div class="empty">Aucun joueur Rush.</div></td></tr>`}</tbody></table></div>
+    <div class="section-title">Activité — 14 derniers jours</div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Jour</th><th>Duels Réel</th><th>Duels Fictif</th><th>Joueurs</th></tr></thead>
+      <tbody>${A.map(a=>`<tr><td>${esc(a.d)}</td><td>${a.reel}</td><td>${a.fictif}</td><td>${a.joueurs}</td></tr>`).join('')||`<tr><td colspan="4"><div class="empty">Aucune activité.</div></td></tr>`}</tbody></table></div>
+    <div class="section-title">Crédits Odds (forfait ${forfait.toLocaleString('fr-FR')} / mois)</div>
+    <div class="card">
+      <div style="margin-bottom:8px">${restant==null?'<span class="faint">Solde jamais relevé</span>':`Restant : <b>${restant.toLocaleString('fr-FR')}</b> · consommés ce mois : <b>${conso.toLocaleString('fr-FR')}</b> (${pct} %) ${pct>=80?tag('r','80 % atteints'):tag('g','dans le budget')} <span class="faint">relevé ${fmtDate(O.releve_at)}</span>`}</div>
+      <div class="faint" style="margin-bottom:8px">Garde-fou : score en direct coupé sous 6 000 restants, nouvelles cotes sous 3 000, résultats jusqu'à 1 000.</div>
+      <table><thead><tr><th>Usage (30 jours)</th><th>Crédits</th><th>Appels payants</th><th>Refus du garde-fou</th></tr></thead>
+      <tbody>${usages.map(u=>`<tr><td>${esc(u.usage)}</td><td>${u.credits}</td><td>${u.appels}</td><td>${u.refus}</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${total30}</b></td><td></td><td></td></tr></tbody></table></div>
+    <div class="section-title">Options Rush illimité / Premium</div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Pseudo</th><th>Rush illimité</th><th>Premium</th><th>Échéance</th><th>Source</th></tr></thead>
+      <tbody>${P.map(p=>`<tr><td>${esc(p.pseudo)}</td><td>${p.rush_illimite?tag('g','oui'):'—'}</td><td>${p.premium?tag('g','oui'):'—'}</td><td>${p.echeance?fmtDate(p.echeance):'permanente'}</td><td>${esc(p.sources)}</td></tr>`).join('')||`<tr><td colspan="5"><div class="empty">Personne n'a Rush illimité ni Premium.</div></td></tr>`}</tbody></table></div>
+  `);
+}
 async function renderRush(){
   loadingMain();
   RUSH_APERCU = null;
