@@ -1366,21 +1366,31 @@ function rushJournalHTML(j){
 async function renderRushTableau(){
   loadingMain();
   let d;
-  try{ d = await rpc('admin_bo_rush_tableau'); }
+  let sy=null;   // ⟦ADMIN-RUSH-SYNTHESE⟧ 01/11 : « qui joue » (absente → écran d'avant)
+  try{ [d, sy] = await Promise.all([rpc('admin_bo_rush_tableau'), rpc('admin_bo_rush_synthese').catch(()=>null)]); }
   catch(e){ setMain(`<div class="card"><b>Tableau Rush indisponible</b><div class="muted" style="margin-top:6px">${esc(e.message||e)}</div></div>`); return; }
   const J=d.joueurs||[], A=d.activite||[], O=d.odds||{}, P=d.options||[];
+  const S=(sy && Array.isArray(sy.joueurs)) ? sy : null, JOURS={};
+  (S && Array.isArray(S.jours) ? S.jours : []).forEach(j=>{ JOURS[j.d]=j.joueurs||[]; });
+  const vieux=t=>!t || (Date.now()-Date.parse(t))>7*864e5, totS=k=>(S?S.joueurs:[]).reduce((s,x)=>s+(+x[k]||0),0), totA=k=>A.reduce((s,a)=>s+(+a[k]||0),0);
   const div=n=>n===1?'Élite':(n?'D'+n:'—');
   const restant=O.restant, forfait=O.forfait||20000, conso=restant==null?null:forfait-restant;
   const pct=conso==null?null:Math.round(conso*100/forfait);
   const usages=O.par_usage||[], total30=usages.reduce((s,u)=>s+(+u.credits||0),0);
   setMain(`
     <div id="topbar"><h1>Rush — tableau de bord</h1><div class="faint">${J.length} joueur(s) Rush Réel · ${d.actifs_7j||0} actif(s) sur 7 jours</div></div>
+    ${S ? `<div class="section-title">Qui joue — ${S.en_cours||0} pari(s) Réel en cours · ${S.joueurs_en_cours||0} joueur(s)</div>
+    <div class="card" style="overflow-x:auto" id="rush-qui-joue"><div class="faint" style="margin-bottom:6px">Grisé : aucun pari depuis 7 jours.</div><table><thead><tr><th>Pseudo</th><th>En cours</th><th>Réel 7 j</th><th>Réel 30 j</th><th>Fictif 7 j</th><th>Dernier pari</th></tr></thead>
+      <tbody>${S.joueurs.map(j=>`<tr${vieux(j.dernier_pari)?' style="opacity:.45"':''}><td>${esc(j.pseudo)}</td><td>${j.en_cours?'<b>'+j.en_cours+'</b>':'—'}</td><td>${j.reel_7j||0}</td><td>${j.reel_30j||0}</td><td>${j.fictif_7j||0}</td><td>${fmtDate(j.dernier_pari)}</td></tr>`).join('')||`<tr><td colspan="6"><div class="empty">Aucun pari Rush.</div></td></tr>`}
+      <tr><td><b>Total</b></td><td><b>${totS('en_cours')}</b></td><td><b>${totS('reel_7j')}</b></td><td><b>${totS('reel_30j')}</b></td><td><b>${totS('fictif_7j')}</b></td><td></td></tr></tbody></table></div>` : `
     <div class="section-title">Joueurs Rush</div>
     <div class="card" style="overflow-x:auto"><table><thead><tr><th>Pseudo</th><th>Division</th><th>Saison</th><th>Points</th><th>Duels</th><th>Meilleure</th><th>Paris Réel 7 j</th><th>Fictif 7 j</th><th>Dernier pari</th><th>Abonnés</th><th>Suivis</th></tr></thead>
-      <tbody>${J.map(j=>`<tr><td>${esc(j.pseudo)}</td><td>${div(j.division)}</td><td>${j.saison??'—'}</td><td>${j.points??'—'}</td><td>${j.duels!=null?j.duels+'/10':'—'}</td><td>${div(j.meilleure)}</td><td>${j.reel_7j||0}</td><td>${j.fictif_7j||0}</td><td>${fmtDate(j.dernier_pari)}</td><td>${j.abonnes||0}</td><td>${j.suivis||0}</td></tr>`).join('')||`<tr><td colspan="11"><div class="empty">Aucun joueur Rush.</div></td></tr>`}</tbody></table></div>
-    <div class="section-title">Activité — 14 derniers jours</div>
+      <tbody>${J.map(j=>`<tr><td>${esc(j.pseudo)}</td><td>${div(j.division)}</td><td>${j.saison??'—'}</td><td>${j.points??'—'}</td><td>${j.duels!=null?j.duels+'/10':'—'}</td><td>${div(j.meilleure)}</td><td>${j.reel_7j||0}</td><td>${j.fictif_7j||0}</td><td>${fmtDate(j.dernier_pari)}</td><td>${j.abonnes||0}</td><td>${j.suivis||0}</td></tr>`).join('')||`<tr><td colspan="11"><div class="empty">Aucun joueur Rush.</div></td></tr>`}</tbody></table></div>`}
+    <div class="section-title">Activité — 14 derniers jours${S ? ' <span class="faint">(touche une journée : qui a joué)</span>' : ''}</div>
     <div class="card" style="overflow-x:auto"><table><thead><tr><th>Jour</th><th>Duels Réel</th><th>Duels Fictif</th><th>Joueurs</th></tr></thead>
-      <tbody>${A.map(a=>`<tr><td>${esc(a.d)}</td><td>${a.reel}</td><td>${a.fictif}</td><td>${a.joueurs}</td></tr>`).join('')||`<tr><td colspan="4"><div class="empty">Aucune activité.</div></td></tr>`}</tbody></table></div>
+      <tbody>${A.map(a=>{ const qui=JOURS[a.d]; return `<tr${qui?` class="clickable" tabindex="0" onclick="rushJourDetail(this)" onkeydown="if(event.key==='Enter')rushJourDetail(this)"`:''}><td>${esc(a.d)}${qui?' ▸':''}</td><td>${a.reel}</td><td>${a.fictif}</td><td>${a.joueurs}</td></tr>`
+        + (qui ? `<tr class="rush-jour-det" style="display:none"><td colspan="4">${qui.map(q=>`<div>${esc(q.pseudo)} · Réel ${q.reel} · Fictif ${q.fictif}</div>`).join('')}</td></tr>` : ''); }).join('')||`<tr><td colspan="4"><div class="empty">Aucune activité.</div></td></tr>`}
+      ${A.length?`<tr><td><b>Total</b></td><td><b>${totA('reel')}</b></td><td><b>${totA('fictif')}</b></td><td></td></tr>`:''}</tbody></table></div>
     <div class="section-title">Crédits Odds (forfait ${forfait.toLocaleString('fr-FR')} / mois)</div>
     <div class="card">
       <div style="margin-bottom:8px">${restant==null?'<span class="faint">Solde jamais relevé</span>':`Restant : <b>${restant.toLocaleString('fr-FR')}</b> · consommés ce mois : <b>${conso.toLocaleString('fr-FR')}</b> (${pct} %) ${pct>=80?tag('r','80 % atteints'):tag('g','dans le budget')} <span class="faint">relevé ${fmtDate(O.releve_at)}</span>`}</div>
@@ -1392,6 +1402,9 @@ async function renderRushTableau(){
       <tbody>${P.map(p=>`<tr><td>${esc(p.pseudo)}</td><td>${p.rush_illimite?tag('g','oui'):'—'}</td><td>${p.premium?tag('g','oui'):'—'}</td><td>${p.echeance?fmtDate(p.echeance):'permanente'}</td><td>${esc(p.sources)}</td></tr>`).join('')||`<tr><td colspan="5"><div class="empty">Personne n'a Rush illimité ni Premium.</div></td></tr>`}</tbody></table></div>
   `);
 }
+// ⟦ADMIN-RUSH-SYNTHESE⟧ une journée de l'activité Rush : ouvre / ferme la liste de qui a joué
+function rushJourDetail(tr){ const n=tr && tr.nextElementSibling; if(!n || !n.classList.contains('rush-jour-det')) return;
+  const ouvert=n.style.display==='none'; n.style.display=ouvert?'':'none'; const c=tr.firstElementChild; if(c) c.textContent=c.textContent.replace(/ [▸▾]$/, ouvert?' ▾':' ▸'); }
 async function renderRush(){
   loadingMain();
   RUSH_APERCU = null;
