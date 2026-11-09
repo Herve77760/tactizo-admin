@@ -508,9 +508,10 @@ async function renderDashboard(){
     <div class="grid grid-4" style="margin-bottom:16px">
       ${kpi(rs?rs.actifs:null, 'Joueurs Rush', rs?cmp(rs.actifs, rs.actifs_prec):'')}
       ${kpi(act7.joueurs_actifs, 'Joueurs Ligues', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
-      ${kpi(act7.utilisateurs_actifs, 'Comptes ayant ouvert l\'appli')}
+      <div style="cursor:pointer" title="Voir qui" onclick="voirComptesActifs('7d')">${kpi(act7.utilisateurs_actifs, 'Comptes ayant ouvert l\'appli ▸')}</div>
       ${kpi(act7.nouveaux_comptes, 'Nouveaux comptes')}
     </div>
+    <div id="comptes-actifs-slot"></div>
     <div class="grid grid-4" style="margin-bottom:8px">
       ${kpi(rs?rs.duels_reel:null, 'Duels Rush Réel')}
       ${kpi(rs?rs.duels_fictif:null, 'Duels Rush Fictif')}
@@ -1089,8 +1090,9 @@ async function renderUsage(){
     </div>
     <div class="grid grid-2" style="margin-bottom:22px">
       ${kpi(sum.nouveaux_comptes,'Nouveaux comptes')}
-      ${kpi(sum.utilisateurs_actifs,'Comptes ayant ouvert l\'appli')}
+      <div style="cursor:pointer" title="Voir qui" onclick="voirComptesActifs(usagePeriod)">${kpi(sum.utilisateurs_actifs,'Comptes ayant ouvert l\'appli ▸')}</div>
     </div>
+    <div id="comptes-actifs-slot"></div>
     <div class="section-title">Rush</div>
     <div class="grid grid-3" style="margin-bottom:22px">
       ${kpi(rsu?rsu.actifs:null,'Joueurs Rush', rsu?cmp(rsu.actifs, rsu.actifs_prec):'')}
@@ -1162,6 +1164,20 @@ async function renderUsage(){
   `);
 }
 function setUsagePeriod(p){ usagePeriod=p; renderUsage(); }
+// ⟦ADMIN-COMPTES-ACTIFS⟧ 09/11 : qui a ouvert l'appli sur la période (même règle que le chiffre : admin_bo_comptes_actifs)
+async function voirComptesActifs(p){
+  const slot=document.getElementById('comptes-actifs-slot'); if(!slot) return;
+  if(slot.dataset.ouvert===p){ slot.innerHTML=''; slot.dataset.ouvert=''; return; }
+  slot.dataset.ouvert=p; slot.innerHTML='<div class="card" style="margin-bottom:22px"><span class="spinner"></span> Chargement…</div>';
+  let l;
+  try{ l=(await rpc('admin_bo_comptes_actifs',{p_period:p}))||[]; }
+  catch(e){ slot.innerHTML=`<div class="card" style="margin-bottom:22px"><div class="faint">Liste indisponible : ${esc(e.message||e)}</div></div>`; return; }
+  const titre={today:"aujourd'hui", '7d':'sur 7 jours', '30d':'sur 30 jours'}[p]||'';
+  slot.innerHTML=`<div class="card" style="margin-bottom:22px;overflow-x:auto"><div class="section-title" style="margin-top:0">Ont ouvert l'appli ${titre} — ${l.length}</div>
+    <table><thead><tr><th>Pseudo</th><th>Dernière ouverture</th><th>Appareil</th><th>Version</th></tr></thead>
+    <tbody>${l.length ? l.map(x=>`<tr><td>${esc(x.pseudo||'?')}<div class="faint">${esc(x.email||'')}</div></td><td data-label="Dernière ouverture">${fmtRel(x.last_active_at)}</td><td data-label="Appareil">${platLabel(x.last_platform)}</td><td data-label="Version">${esc(x.last_app_version||'—')}</td></tr>`).join('')
+      : `<tr><td colspan="4"><div class="empty">Personne sur cette période.</div></td></tr>`}</tbody></table></div>`;
+}
 
 // ================================================================== MONÉTISATION
 async function renderMonetisation(){
