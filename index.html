@@ -45,8 +45,9 @@ h1,h2,h3{margin:0 0 8px}
 .grid{display:grid;gap:16px}
 .grid-5{grid-template-columns:repeat(5,1fr)}
 .grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-4{grid-template-columns:repeat(4,1fr)}
 .grid-2{grid-template-columns:repeat(2,1fr)}
-@media (max-width:1100px){.grid-5{grid-template-columns:repeat(2,1fr)}.grid-3{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr)}.grid-5{grid-template-columns:repeat(2,1fr)}.grid-3{grid-template-columns:repeat(2,1fr)}}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;
   padding:8px 10px;border-bottom:1px solid var(--border)}
@@ -163,7 +164,7 @@ textarea{resize:vertical;min-height:64px}
 
 /* ---------- small-screen scaling ---------- */
 @media (max-width:680px){
-  .grid-5,.grid-3,.grid-2{grid-template-columns:1fr}
+  .grid-5,.grid-4,.grid-3,.grid-2{grid-template-columns:1fr}
 }
 @media (max-width:880px){
   .btn{min-height:40px;padding:9px 14px}
@@ -265,14 +266,14 @@ textarea{resize:vertical;min-height:64px}
   <div id="sidebar">
     <div id="logo"><span class="dot"></span>TACTIZO <span style="font-weight:400;color:var(--muted)">Admin</span></div>
     <a class="navlink" data-view="dashboard">🏠 Dashboard</a>
+    <a class="navlink" data-view="rushtb">⚡ Rush — tableau de bord</a>
+    <a class="navlink" data-view="rush">⚡ Rush — neutralisation</a>
     <a class="navlink" data-view="joueurs">👥 Joueurs</a>
     <a class="navlink" data-view="ligues">🏆 Ligues</a>
     <a class="navlink" data-view="usage">📊 Usage</a>
     <a class="navlink" data-view="monetisation">💰 Monétisation</a>
     <a class="navlink" data-view="systeme">🖥️ Système</a>
     <a class="navlink" data-view="journal">📜 Journal admin</a>
-    <a class="navlink" data-view="rushtb">⚡ Rush — tableau de bord</a>
-    <a class="navlink" data-view="rush">⚡ Rush — neutralisation</a>
     <div id="navspacer"></div>
     <a class="navlink" id="logout-link">↩ Déconnexion</a>
   </div>
@@ -401,7 +402,7 @@ async function render(){
 // ================================================================== DASHBOARD
 async function renderDashboard(){
   loadingMain();
-  const [health, act7] = await Promise.all([ rpc('admin_bo_health'), rpc('admin_bo_usage_summary',{p_period:'7d'}), chargerEcheancesAlertes() ]);
+  const [health, act7] = await Promise.all([ rpc('admin_bo_health'), rpc('admin_bo_usage_summary',{p_period:'7d'}), chargerEcheancesAlertes(), chargerRushSante(7) ]);
   cache.health = health;
 
   // ---- verdict global ----
@@ -449,7 +450,8 @@ async function renderDashboard(){
   const sansDepart = matchs.ligues_actives_sans_day_started_at || 0;
   const matchLed = (enRetard>0 || sansDepart>0) ? 'o'
                  : (matchs.duels_sans_fixtures_journee_active>0 ? 'gray' : 'g');
-  const apiLed = quota.remaining!=null ? (quota.remaining<50?'r':quota.remaining<150?'o':'g') : 'gray';
+  const apiLed = quota.remaining!=null ? (quota.remaining<ODDS_SEUIL_COTES?'r':quota.remaining<ODDS_SEUIL_DIRECT?'o':'g') : 'gray';   // ⟦ADMIN-REFONTE-0911⟧ seuils du garde-fou
+  const rs = rushSante, rushLed = !rs ? 'gray' : ((rs.resultats_en_retard>0 || rs.catalogue_reel===0) ? 'o' : 'g');
   /* ⚠️ 2026-09-25 — le voyant suit les erreurs NON RÉSOLUES, pas le total. Une coupure réseau
      rattrapée 25 s plus tard (cas réel de Félicie le 23/09) laissait le Dashboard orange 24 h :
      l'orange finissait par ne plus rien vouloir dire. Le total reste affiché juste en dessous. */
@@ -466,14 +468,20 @@ async function renderDashboard(){
         : `<div class="empty">✓ Aucune action requise</div>`}
     </div>
 
-    <div class="grid grid-5" style="margin-bottom:22px">
-      ${voyant('JEU', jeuLed, [
+    <div class="grid grid-3" style="margin-bottom:22px">
+      ${voyant('RUSH', rushLed, rs ? [
+        rs.catalogue_reel>0 ? `${rs.catalogue_reel} rencontre(s) Réel ouverte(s) · prochaine ${fmtDate(rs.prochaine_reel)}` : '⚠️ Aucune rencontre Réel ouverte',
+        `${rs.en_cours} pari(s) Réel en cours · ${rs.joueurs_en_cours} joueur(s)`,
+        rs.resultats_en_retard>0 ? `⚠️ ${rs.resultats_en_retard} rencontre(s) pas réglée(s) 8 h après le coup d'envoi` : 'Résultats à jour',
+        `Dernier ajout au catalogue : ${fmtRel(rs.dernier_ajout)}`
+      ] : [nd()])}
+      ${voyant('LIGUES', jeuLed, [
         `${jeu.ligues_en_preparation} en préparation · ${jeu.ligues_en_competition} en compétition`,
         jeu.ligues_bloquees.length? `${jeu.ligues_bloquees.length} bloquée(s) (verrou > 15 min)` : 'Aucune ligue bloquée',
         jeu.running_sans_progression.length? `${jeu.running_sans_progression.length} sans progression >7j` : 'Progression normale',
         jeu.ligues_reviewer_gelees.length? `${jeu.ligues_reviewer_gelees.length} ligue(s) Reviewer gelée(s) — état normal` : 'Aucune ligue technique gelée'
       ])}
-      ${voyant('MATCHS', matchLed, [
+      ${voyant('LIGUES — MATCHS', matchLed, [
         `${matchs.duels_total_journee_active} duel(s) journée active`,
         matchs.duels_sans_fixtures_journee_active>0
           ? `${matchs.duels_sans_fixtures_journee_active} en attente de sélection des matchs`
@@ -481,9 +489,10 @@ async function renderDashboard(){
         enRetard>0 ? `⚠️ ${enRetard} duel(s) en retard — tirage automatique attendu` : null,
         sansDepart>0 ? `⚠️ ${sansDepart} ligue(s) active(s) sans date de départ de journée` : null
       ].filter(Boolean))}
-      ${voyant('API', apiLed, quota.remaining!=null ? [
-        `${quota.remaining} crédits restants / ${quota.limit||500}`,
-        `${quota.used||'—'} utilisés ce mois`
+      ${voyant('CRÉDITS ODDS', apiLed, quota.remaining!=null ? [
+        `${fmtNum(quota.remaining)} restants / ${fmtNum(ODDS_FORFAIT)}`,
+        `${fmtNum(Math.max(0, ODDS_FORFAIT-quota.remaining))} consommés ce mois (${Math.round(Math.max(0, ODDS_FORFAIT-quota.remaining)*100/ODDS_FORFAIT)} %)`,
+        quota.remaining<ODDS_SEUIL_COTES ? '⚠️ Nouvelles cotes coupées par le garde-fou' : quota.remaining<ODDS_SEUIL_DIRECT ? '⚠️ Score en direct coupé par le garde-fou' : 'Garde-fou inactif'
       ] : [nd()])}
       ${voyant('INTÉGRITÉ', integLed, [
         `Surveillance partielle`,
@@ -496,21 +505,19 @@ async function renderDashboard(){
     </div>
 
     <div class="section-title">Activité — 7 derniers jours</div>
-    <div class="grid grid-3" style="margin-bottom:16px">
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${kpi(rs?rs.actifs:null, 'Joueurs Rush', rs?cmp(rs.actifs, rs.actifs_prec):'')}
+      ${kpi(act7.joueurs_actifs, 'Joueurs Ligues', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
+      ${kpi(act7.utilisateurs_actifs, 'Comptes ayant ouvert l\'appli')}
       ${kpi(act7.nouveaux_comptes, 'Nouveaux comptes')}
-      ${kpi(act7.utilisateurs_actifs, 'Utilisateurs actifs <span class="faint">— web uniquement, mobile à partir de la prochaine version</span>')}
-      ${kpi(act7.joueurs_actifs, 'Joueurs actifs', cmp(act7.joueurs_actifs, act7.joueurs_actifs_periode_precedente))}
     </div>
-    <div class="grid grid-2" style="margin-bottom:8px">
-      ${kpi(act7.ligues_en_preparation, 'Ligues en préparation')}
-      ${kpi(act7.ligues_en_competition, 'Ligues en compétition')}
+    <div class="grid grid-4" style="margin-bottom:8px">
+      ${kpi(rs?rs.duels_reel:null, 'Duels Rush Réel')}
+      ${kpi(rs?rs.duels_fictif:null, 'Duels Rush Fictif')}
+      ${kpi(act7.pronostics_enregistres, 'Pronostics Ligues')}
+      ${kpi((act7.ligues_en_preparation||0)+(act7.ligues_en_competition||0), 'Ligues en cours (maintenant)')}
     </div>
-    <div class="faint" style="margin-bottom:16px">Photo instantanée (indépendante de la période 7 jours ci-dessus) — comptes techniques/démo/reviewer exclus.</div>
-    <div class="grid grid-2" style="margin-bottom:22px">
-      ${kpi(act7.pronostics_enregistres, 'Pronostics enregistrés')}
-      ${kpi(act7.journees_resolues, 'Journées résolues')}
-    </div>
-    <div class="faint">Comptes techniques/démo/reviewer exclus de ces chiffres. Les ligues techniques (ex: Reviewer gelée) restent supervisées dans le voyant JEU ci-dessus. Voir <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a> pour le détail, ou <a href="#systeme" onclick="goto('systeme')" style="color:var(--gold)">Système</a> pour l'infrastructure.</div>
+    <div class="faint">Joueurs Rush : ont validé au moins un duel (Joueur IA exclu). Joueurs Ligues : ont soumis au moins un pronostic. Comptes techniques/démo/reviewer exclus. Détail : <a href="#rushtb" onclick="goto('rushtb')" style="color:var(--gold)">Rush — tableau de bord</a> · <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a>.</div>
   `);
   document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
 }
@@ -525,16 +532,27 @@ async function echeanceRenouvelee(cle, libelle, date, perio){
 // Échéances dans leur fenêtre de rappel → alertes du Dashboard (chargées à part : une absence de la RPC,
 // avant migration, ne doit jamais casser le Dashboard).
 let echeancesAlertes=[];
+// ⟦ADMIN-REFONTE-0911⟧ 09/11 : une échéance dépassée n'est ROUGE (« empêche de jouer ») que si elle peut réellement couper le jeu :
+// le domaine (site + appli) et le secret Sign in with Apple (connexion iPhone). Les autres (marque, carte…) restent orange.
+const ECHEANCES_BLOQUANTES = ['domaine_tactizo_renouvellement', 'apple_signin_jwt_secret'];
+// Forfait The Odds API et paliers du garde-fou (garde-depense-odds) : score en direct coupé sous 6 000, nouvelles cotes sous 3 000.
+const ODDS_FORFAIT = 20000, ODDS_SEUIL_DIRECT = 6000, ODDS_SEUIL_COTES = 3000;
+let rushSante=null;   // admin_bo_rush_sante (absente → voyant gris, jamais d'écran cassé)
+async function chargerRushSante(j){ try{ rushSante=await rpc('admin_bo_rush_sante',{p_jours:j}); }catch(e){ rushSante=null; } return rushSante; }
+function rushDivLabel(n){ return n===1 ? 'Élite' : (n ? 'D'+n : '—'); }
 async function chargerEcheancesAlertes(){ try{ echeancesAlertes=(await rpc('admin_bo_echeances_alertes'))||[]; }catch(e){ echeancesAlertes=[]; } }
 function collectAlerts(h){
   const out=[];
-  ((typeof echeancesAlertes!=='undefined' && echeancesAlertes) || []).forEach(e=> out.push({sev: e.jours<0 ? 'r' : 'o',
+  ((typeof echeancesAlertes!=='undefined' && echeancesAlertes) || []).forEach(e=> out.push({sev: (e.jours<0 && ECHEANCES_BLOQUANTES.includes(e.cle)) ? 'r' : 'o',
     text: e.jours<0 ? `Échéance dépassée : ${e.libelle} (${e.date_echeance})` : `Échéance dans ${e.jours} jour(s) : ${e.libelle} (${e.date_echeance})${e.automatique?' — renouvellement automatique, vérifier la carte':''}`, href:'systeme'}));
   (h.jeu.ligues_bloquees||[]).forEach(l=> out.push({sev:'r', text:`Ligue ${l.code} — resolve_lock bloqué depuis plus de 15 min`, href:'ligues'}));
   (h.jeu.running_sans_progression||[]).forEach(l=> out.push({sev:'o', text:`Ligue ${l.code} — running sans progression depuis plus de 7 jours`, href:'ligues'}));
   const q=h.api.quota_dernier_releve||{};
-  if(q.remaining!=null && q.remaining<50) out.push({sev:'r', text:`Quota The Odds API très bas : ${q.remaining} crédits restants`, href:'systeme'});
-  else if(q.remaining!=null && q.remaining<150) out.push({sev:'o', text:`Quota The Odds API à surveiller : ${q.remaining} crédits restants`, href:'systeme'});
+  if(q.remaining!=null && q.remaining<ODDS_SEUIL_COTES) out.push({sev:'r', text:`Crédits Odds très bas : ${fmtNum(q.remaining)} restants — nouvelles cotes coupées (plus de nouveaux matchs)`, href:'rushtb'});
+  else if(q.remaining!=null && q.remaining<ODDS_SEUIL_DIRECT) out.push({sev:'o', text:`Crédits Odds à surveiller : ${fmtNum(q.remaining)} restants — score en direct coupé`, href:'rushtb'});
+  const rsa=(typeof rushSante!=='undefined') ? rushSante : null;   // ⟦ADMIN-REFONTE-0911⟧ Rush
+  if(rsa && rsa.resultats_en_retard>0) out.push({sev:'o', text:`Rush : ${rsa.resultats_en_retard} rencontre(s) pas réglée(s) 8 h après le coup d'envoi`, href:'rush'});
+  if(rsa && rsa.catalogue_reel===0) out.push({sev:'o', text:'Rush : aucune rencontre Réel ouverte — personne ne peut parier en Réel', href:'rushtb'});
   /* ⚠️ 2026-09-23 — « duels sans affiches » NE FAIT PLUS PARTIE DES ALERTES (raisonnement complet
      au-dessus de `matchLed`, dans renderDashboard). Ce compteur décrit l'état NORMAL d'une journée
      qui vient de s'ouvrir : il aurait déclenché « X point(s) nécessite(nt) ton attention » à chaque
@@ -578,7 +596,8 @@ function cmp(now, prev){
 let joueursPage=1, joueursQuery='';
 async function renderJoueurs(){
   loadingMain();
-  const res = await rpc('admin_bo_players_search', {p_query: joueursQuery||null, p_page: joueursPage, p_page_size: 25});
+  const [res, rsj] = await Promise.all([ rpc('admin_bo_players_search', {p_query: joueursQuery||null, p_page: joueursPage, p_page_size: 25}), chargerRushSante(7) ]);
+  const RJ={}; ((rsj && rsj.joueurs) || []).forEach(x=>{ RJ[x.user_id]=x; });   // ⟦ADMIN-REFONTE-0911⟧ colonne Rush
   const totalPages = Math.max(1, Math.ceil(res.total/res.page_size));
   setMain(`
     <div id="topbar"><h1>Joueurs</h1><div class="faint">${res.total} compte(s)</div></div>
@@ -609,10 +628,11 @@ async function renderJoueurs(){
              dans la métadonnée `name` du compte, qui garde le nom de création — un compte créé par
              une personne et utilisé par une autre y porte encore le nom du créateur. Le back-office
              a toujours eu raison de s'appuyer sur l'EMAIL. */''}
-      <table><thead><tr><th>Email</th><th>Ligue(s)</th><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
+      <table><thead><tr><th>Email</th><th>Rush</th><th>Ligue(s)</th><th>Plateforme</th><th>Version</th><th>Build</th><th>Dernière activité</th><th>Dernière connexion</th><th>Statut</th></tr></thead>
       <tbody>${res.rows.length? res.rows.map(r=>`
         <tr class="clickable" tabindex="0" role="button" aria-label="Ouvrir la fiche de ${esc(r.email)}" onclick="openPlayer('${r.user_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPlayer('${r.user_id}');}" title="Ouvrir la fiche détaillée">
           <td><span class="lien-fiche">${esc(r.email)}</span></td>
+          <td data-label="Rush">${RJ[r.user_id] ? `${rushDivLabel(RJ[r.user_id].division)} · ${fmtRel(RJ[r.user_id].dernier_pari)}` : '<span class="faint">—</span>'}</td>
           <td data-label="Ligue(s)">${ligueActivesCell(r.ligues)}</td>
           <td data-label="Plateforme">${platLabel(r.last_platform)}</td>
           <td data-label="Version">${r.last_app_version? esc(r.last_app_version) : '<span class="faint">—</span>'}</td>
@@ -620,15 +640,13 @@ async function renderJoueurs(){
           <td data-label="Dernière activité">${fmtRel(r.last_active_at)}</td>
           <td data-label="Dernière connexion">${fmtRel(r.last_sign_in_at)}</td>
           <td data-label="Statut">${r.banned? tag('r','Banni') : tag('g','Actif')}</td>
-        </tr>`).join('') : `<tr><td colspan="8"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
+        </tr>`).join('') : `<tr><td colspan="9"><div class="empty">Aucun compte ne correspond.</div></td></tr>`}
       </tbody></table>
       <div class="faint" style="margin:10px 0 4px">
         <b>Dernière connexion</b> : dernière authentification Supabase. Une session reste ouverte plusieurs
         jours — un compte peut donc utiliser Tactizo longtemps après cette date, sans jamais se reconnecter.<br>
         <b>Dernière activité</b> : dernière utilisation réelle de l'application, horodatée par le serveur à
-        l'ouverture et au retour au premier plan. <b>Web uniquement pour l'instant</b> — les applications
-        mobiles installées (8.481) n'émettent pas encore ce signal, elles afficheront « — » jusqu'à la
-        prochaine version. Un tiret signifie « aucune activité enregistrée », jamais une estimation.
+        l'ouverture et au retour au premier plan. Web et mobile (8.557 et plus) ; une appli plus ancienne affiche « — ». Un tiret signifie « aucune activité enregistrée », jamais une estimation.
       </div>
       <div class="pager">
         <button class="btn small" ${joueursPage<=1?'disabled':''} onclick="changeJoueursPage(-1)">← Précédent</button>
@@ -854,9 +872,14 @@ async function openPlayer(userId){
 
 // ================================================================== LIGUES
 let liguesPage=1, liguesQuery='', liguesStatus='', liguesMode='';
+// ⟦ADMIN-REFONTE-0911⟧ ligues de test (simulées, TEST…, Reviewer) masquées par défaut : les vraies ligues d'abord.
+let liguesTests=false;
+function ligueDeTest(l){ return l.data_mode==='sim' || !!l.reviewer_gelee || /test|reviewer/i.test(l.name||''); }
 async function renderLigues(){
   loadingMain();
-  const res = await rpc('admin_bo_leagues_list', {p_query:liguesQuery||null, p_status:liguesStatus||null, p_data_mode:liguesMode||null, p_page:liguesPage, p_page_size:25});
+  const res = await rpc('admin_bo_leagues_list', {p_query:liguesQuery||null, p_status:liguesStatus||null, p_data_mode:liguesMode||null, p_page:liguesTests?liguesPage:1, p_page_size:liguesTests?25:200});
+  const nTests = res.rows.filter(ligueDeTest).length;
+  if(!liguesTests){ res.rows = res.rows.filter(l=>!ligueDeTest(l)); res.total = res.rows.length; res.page = 1; res.page_size = Math.max(1, res.rows.length); }
   const totalPages = Math.max(1, Math.ceil(res.total/res.page_size));
   setMain(`
     <div id="topbar"><h1>Ligues</h1><div class="faint">${res.total} ligue(s)</div></div>
@@ -869,6 +892,7 @@ async function renderLigues(){
           <option value="real" ${liguesMode==='real'?'selected':''}>Réel</option>
           <option value="sim" ${liguesMode==='sim'?'selected':''}>Simulé</option></select>
         <button class="btn" id="l-search-btn">Filtrer</button>
+        <label class="faint" style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${liguesTests?'checked':''} onchange="liguesTests=this.checked; liguesPage=1; renderLigues()"> Ligues de test${!liguesTests && nTests ? ` (${nTests} masquée(s))` : ''}</label>
       </div>
     </div>
     <div class="card" id="ligues-liste">
@@ -1056,28 +1080,35 @@ function actionDeleteLeague(){
 let usagePeriod='7d';
 async function renderUsage(){
   loadingMain();
-  const [sum, det] = await Promise.all([ rpc('admin_bo_usage_summary',{p_period:usagePeriod}), rpc('admin_bo_usage_detail') ]);
+  const [sum, det, rsu] = await Promise.all([ rpc('admin_bo_usage_summary',{p_period:usagePeriod}), rpc('admin_bo_usage_detail'), chargerRushSante(usagePeriod==='today'?1:usagePeriod==='30d'?30:7) ]);
   const ret = await rpc('admin_bo_retention');
   setMain(`
     <div id="topbar"><h1>Usage</h1></div>
     <div class="hstack" style="margin-bottom:16px">
       ${['today','7d','30d'].map(p=>`<button class="btn small ${usagePeriod===p?'primary':''}" onclick="setUsagePeriod('${p}')">${p==='today'?"Aujourd'hui":p==='7d'?'7 jours':'30 jours'}</button>`).join('')}
     </div>
-    <div class="grid grid-3" style="margin-bottom:16px">
+    <div class="grid grid-2" style="margin-bottom:22px">
       ${kpi(sum.nouveaux_comptes,'Nouveaux comptes')}
-      ${kpi(sum.utilisateurs_actifs,'Utilisateurs actifs <span class="faint">— web uniquement, mobile à partir de la prochaine version</span>')}
-      ${kpi(sum.joueurs_actifs,'Joueurs actifs', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
+      ${kpi(sum.utilisateurs_actifs,'Comptes ayant ouvert l\'appli')}
+    </div>
+    <div class="section-title">Rush</div>
+    <div class="grid grid-3" style="margin-bottom:22px">
+      ${kpi(rsu?rsu.actifs:null,'Joueurs Rush', rsu?cmp(rsu.actifs, rsu.actifs_prec):'')}
+      ${kpi(rsu?rsu.duels_reel:null,'Duels Réel')}
+      ${kpi(rsu?rsu.duels_fictif:null,'Duels Fictif')}
+    </div>
+    <div class="section-title">Ligues</div>
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${kpi(sum.joueurs_actifs,'Joueurs Ligues', cmp(sum.joueurs_actifs, sum.joueurs_actifs_periode_precedente))}
+      ${kpi(sum.pronostics_enregistres,'Pronostics enregistrés')}
+      ${kpi(sum.journees_resolues,'Journées résolues')}
     </div>
     <div class="grid grid-2" style="margin-bottom:8px">
       ${kpi(sum.ligues_en_preparation,'Ligues en préparation')}
       ${kpi(sum.ligues_en_competition,'Ligues en compétition')}
     </div>
     <div class="faint" style="margin-bottom:16px">${esc(sum.ligues_definition||'')}</div>
-    <div class="grid grid-2" style="margin-bottom:22px">
-      ${kpi(sum.pronostics_enregistres,'Pronostics enregistrés')}
-      ${kpi(sum.journees_resolues,'Journées résolues')}
-    </div>
-    <div class="faint" style="margin-bottom:22px">Nouveaux comptes : comptes Tactizo créés pendant la période. Utilisateurs actifs : ${esc(sum.utilisateurs_actifs_definition||'')} Joueurs actifs : ont réellement soumis au moins un pronostic pendant la période. Comptes techniques/démo/reviewer exclus de tous ces chiffres.</div>
+    <div class="faint" style="margin-bottom:22px">Nouveaux comptes : comptes Tactizo créés pendant la période. Comptes ayant ouvert l'appli : horodaté par le serveur à chaque ouverture (web et mobile 8.557+), pas la dernière authentification. Joueurs Rush : ont validé au moins un duel (Joueur IA exclu). Joueurs Ligues : ont soumis au moins un pronostic. Comptes techniques/démo/reviewer exclus de tous ces chiffres.</div>
 
     <div class="section-title">Engagement / rétention</div>
     <div class="card" style="margin-bottom:22px">
@@ -1111,20 +1142,12 @@ async function renderUsage(){
       </div>
     </div>
 
-    <div class="grid grid-3" style="margin-bottom:22px">
-      ${kpi(det.mise_moyenne!=null? fmtEuro(det.mise_moyenne) : null, 'Mise moyenne')}
-      ${kpi(det.taux_utilisation_capitaine!=null? det.taux_utilisation_capitaine+' %' : null, 'Utilisation Capitaine')}
-      ${kpi(det.taux_participation_journees!=null? det.taux_participation_journees+' %' : null, 'Taux de participation aux journées')}
-    </div>
-
-    <div class="grid grid-3" style="margin-bottom:22px">
+    <div class="grid grid-2" style="margin-bottom:22px">
       <div class="card"><div class="section-title" style="margin-top:0">Solo vs Entre amis</div>
         <div class="faint" style="margin-bottom:6px">${esc(det.solo_vs_amis_definition)}</div>
         ${tag('n','Solo : '+det.solo_vs_amis.solo)} ${tag('n','Entre amis : '+det.solo_vs_amis.entre_amis)}</div>
       <div class="card"><div class="section-title" style="margin-top:0">Réel vs Simulé</div>
         ${Object.entries(det.reel_vs_simule||{}).map(([k,v])=>tag('n',k+' : '+v)).join(' ')||nd()}</div>
-      <div class="card"><div class="section-title" style="margin-top:0">Rythme unique</div>
-        ${det.rythme_journees_heritees!=null?tag(det.rythme_journees_heritees?'n':'g','Journées encore à l\'ancien rythme : '+det.rythme_journees_heritees):(det.repartition_formule?Object.entries(det.repartition_formule).map(([k,v])=>tag('n',(k||'—')+' : '+v)).join(' '):nd())}</div>
     </div>
 
     <div class="grid grid-2" style="margin-bottom:22px">
@@ -1136,11 +1159,6 @@ async function renderUsage(){
         ${tag('g','Réguliers : '+det.joueurs_par_regularite.reguliers_8plus_30j)} ${tag('o','Irréguliers : '+det.joueurs_par_regularite.irreguliers_1a7_30j)} ${tag('r','Quasi-inactifs : '+det.joueurs_par_regularite.quasi_inactifs_0_30j)}</div>
     </div>
 
-    <div class="section-title">Classement global (Tactizo Rating)</div>
-    <div class="card">
-      <div class="empty">Emplacement réservé pour un futur classement global (meilleurs joueurs actifs / All Time).<br>
-      Aucune formule de rating n'a été définie pour l'instant — cette page attend une décision produit avant d'afficher un classement officiel.</div>
-    </div>
   `);
 }
 function setUsagePeriod(p){ usagePeriod=p; renderUsage(); }
@@ -1152,28 +1170,17 @@ async function renderMonetisation(){
   setMain(`
     <div id="topbar"><h1>Monétisation</h1></div>
     ${m.mode_test ? `<div id="health-banner" class="o"><div class="big">🧪 MODE TEST — les paiements réels sont désactivés (phase_test=true). Les joueurs obtiennent les options gratuitement.</div></div>` : `<div id="health-banner" class="g"><div class="big">Paiements réels actifs</div></div>`}
-    ${m.mode_test_indetermine? `<div class="faint" style="margin-bottom:14px">⚠️ Statut phase_test non lisible automatiquement (table app_config) — statut par défaut supposé « test » par prudence.</div>`:''}
 
     <div class="section-title">Offres</div>
     <div class="card" style="margin-bottom:22px">
-      <div class="faint" style="margin-bottom:10px">Catalogue connu (Joueur IA, Bonus complets, Trêve, Rachat, Duel Live, Stats avancées, pack Tactizo Premium — ${fmtEuro(m.pack_premium_prix_eur)}). Comptes actifs par option ci-dessous, calculés depuis <span class="mono">entitlements</span> :</div>
+      <div class="faint" style="margin-bottom:10px">Catalogue (Rush illimité, Joueur IA, Bonus complets, Trêve, Rachat, Duel Live, Stats avancées, pack Tactizo Premium — ${fmtEuro(m.pack_premium_prix_eur)}). Comptes actifs par option ci-dessous, calculés depuis <span class="mono">entitlements</span> :</div>
       <table class="plain"><thead><tr><th>Option</th><th>Comptes actifs</th></tr></thead>
-      <tbody>${Object.keys(m.entitlements_actifs_par_option||{}).length? Object.entries(m.entitlements_actifs_par_option).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Aucun entitlement actif actuellement.</td></tr>`}</tbody></table>
+      <tbody>${Object.keys(m.entitlements_actifs_par_option||{}).length? Object.entries(m.entitlements_actifs_par_option).map(([k,v])=>`<tr><td>${esc(({rushillimite:'⚡ Rush illimité', premium:'⭐ Tactizo Premium', stats:'📊 Stats avancées'})[k] || ((OPTIONS_CATALOGUE.find(o=>o.opt===k)||{}).e ? OPTIONS_CATALOGUE.find(o=>o.opt===k).e+' '+OPTIONS_CATALOGUE.find(o=>o.opt===k).nom : k))}</td><td>${v}</td></tr>`).join(''):`<tr><td colspan="2" class="faint">Aucun entitlement actif actuellement.</td></tr>`}</tbody></table>
       <div class="faint" style="margin-top:8px">${m.joueurs_avec_entitlement} joueur(s) au total avec au moins une option active.</div>
     </div>
 
-    <div class="section-title">Points Tactizo</div>
-    <div class="grid grid-3" style="margin-bottom:22px">
-      ${kpi(m.points.en_circulation,'En circulation')}
-      ${kpi(m.points.credites_total,'Crédités (total historique)')}
-      ${kpi(m.points.depenses_total,'Dépensés (total historique)')}
-    </div>
-
-    <div class="section-title">Parrainages</div>
-    <div class="grid grid-2" style="margin-bottom:22px">
-      ${kpi(m.parrainages.total_credits_parrainage,'Crédits liés à un parrainage')}
-      ${kpi(m.parrainages.comptes_supprimes_avec_parrainage,'Comptes supprimés ayant été parrainés')}
-    </div>
+    <div class="section-title">Points Tactizo et parrainages</div>
+    <div class="card" style="margin-bottom:22px">Points en circulation : <b>${fmtNum(m.points.en_circulation)}</b> · crédités au total : ${fmtNum(m.points.credites_total)} · dépensés : ${fmtNum(m.points.depenses_total)} · crédits de parrainage : ${fmtNum(m.parrainages.total_credits_parrainage)}</div>
 
     <div class="between section-title"><span>Codes promo</span><button class="btn small" onclick="actionCreatePromoCode()">+ Créer un code</button></div>
     <div class="card" style="margin-bottom:22px">
@@ -1210,7 +1217,7 @@ async function renderSysteme(){
     <div class="grid grid-2" style="margin-bottom:22px">
       <div class="card">
         <div class="section-title" style="margin-top:0">The Odds API</div>
-        ${quota.remaining!=null ? `<div class="grid grid-2">${kpi(quota.remaining,'Crédits restants')}${kpi(quota.used,'Utilisés ce mois')}</div>` : `<div class="empty">${nd()}</div>`}
+        ${quota.remaining!=null ? `<div class="grid grid-2">${kpi(quota.remaining,'Crédits restants / '+fmtNum(ODDS_FORFAIT))}${kpi(Math.max(0, ODDS_FORFAIT-quota.remaining),'Consommés ce mois')}</div><div class="faint" style="margin-top:6px">Détail par usage : <a href="#rushtb" onclick="goto('rushtb')" style="color:var(--gold)">Rush — tableau de bord</a></div>` : `<div class="empty">${nd()}</div>`}
       </div>
       <div class="card">
         <div class="section-title" style="margin-top:0">Notifications push</div>
@@ -1323,7 +1330,7 @@ function rushIdentiteHTML(r){
 function rushRencontresHTML(liste){
   if(!liste || !liste.length) return `<div class="empty">Aucune rencontre engagée${rushRecherche?' pour « '+esc(rushRecherche)+' »':''}.</div>`;
   return `<table><thead><tr><th>Rencontre</th><th>Sport</th><th>Compétition</th><th>Heure de référence</th><th>Statut</th><th>Duels</th></tr></thead>
-    <tbody>${liste.map(r=>`<tr class="clickable" tabindex="0" role="button" data-rencontre="${esc(r.id)}" onclick="rushOuvrirApercu(this.dataset.rencontre)" onkeydown="if(event.key==='Enter')rushOuvrirApercu(this.dataset.rencontre)">
+    <tbody>${liste.slice().sort((a,b)=>((+(b.nb_engagements>b.nb_resolus))-(+(a.nb_engagements>a.nb_resolus))) || (Date.parse(b.heure_reference||0)-Date.parse(a.heure_reference||0))).map(r=>`<tr class="clickable" tabindex="0" role="button" data-rencontre="${esc(r.id)}" onclick="rushOuvrirApercu(this.dataset.rencontre)" onkeydown="if(event.key==='Enter')rushOuvrirApercu(this.dataset.rencontre)">
       <td><span class="lien-fiche">${esc(r.domicile||'?')} — ${esc(r.exterieur||'?')}</span></td>
       <td data-label="Sport">${esc(r.sport||'—')}</td><td data-label="Compétition">${esc(r.competition||'—')}</td>
       <td data-label="Heure de référence">${fmtDate(r.heure_reference)}</td><td data-label="Statut">${tag('n', r.statut||'—')}</td>
