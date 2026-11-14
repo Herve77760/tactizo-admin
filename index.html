@@ -460,6 +460,7 @@ async function renderDashboard(){
 
   setMain(`
     <div id="topbar"><h1>Dashboard</h1><div id="lastcheck">Dernière vérification : ${fmtDate(health.verifie_a)} <button class="btn small" id="refresh-btn" style="margin-left:8px">↻ Actualiser</button></div></div>
+    <div id="resultats-attente-slot"></div>
     <div id="health-banner" class="${level}"><div class="big">TACTIZO ADMIN — ${verdictTxt}</div></div>
 
     <div class="section-title">À traiter / à anticiper</div>
@@ -522,6 +523,7 @@ async function renderDashboard(){
     <div class="faint">Joueurs Rush : ont validé au moins un duel (Joueur IA exclu). Joueurs Ligues : ont soumis au moins un pronostic. Comptes techniques/démo/reviewer exclus. Détail : <a href="#rushtb" onclick="goto('rushtb')" style="color:var(--gold)">Rush — tableau de bord</a> · <a href="#usage" onclick="goto('usage')" style="color:var(--gold)">Usage</a>.</div>
   `);
   document.getElementById('refresh-btn').addEventListener('click', renderDashboard);
+  chargerResultatsAttente();   // ⟦ADMIN-RESULTATS-ATTENTE⟧
 }
 
 // 2026-10-05 — « Renouvelé » : avance l'échéance d'une période, après confirmation (journalisé côté serveur).
@@ -1166,6 +1168,35 @@ async function renderUsage(){
   `);
 }
 function setUsagePeriod(p){ usagePeriod=p; renderUsage(); }
+
+// ⟦ADMIN-RESULTATS-ATTENTE⟧ 14/11 : saisie manuelle d'un score quand le fournisseur ne le donne pas (Rush + Ligues)
+async function chargerResultatsAttente(){
+  const slot=document.getElementById('resultats-attente-slot'); if(!slot) return;
+  let l; try{ l=(await rpc('admin_resultats_en_attente'))||[]; }catch(e){ slot.innerHTML=''; return; }
+  if(!l.length){ slot.innerHTML=''; return; }
+  const ligne=(x,i)=>{ const f=x.fournisseur||{}, s=x.saisie, ko=x.ko?new Date(x.ko).toLocaleString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    const src=(x.sources||[]).map(v=>v==='rush'?'Rush':'Ligue').join(' + ');
+    const four=f.completed? `terminé ${f.hs??'?'}-${f.as??'?'}` : (f.hs!=null? `en cours ${f.hs}-${f.as}` : 'aucun score');
+    return `<tr><td><b>${esc(x.domicile||'?')} – ${esc(x.exterieur||'?')}</b><div class="faint" style="font-size:12px">${esc(ko)} · ${esc(src)} · fournisseur : ${esc(four)}${s?` · <b>saisi ${s.hs}-${s.as}</b>`:''}</div></td>
+      <td style="white-space:nowrap"><input type="number" min="0" max="300" inputmode="numeric" id="ra-h-${i}" style="width:64px" value="${s?s.hs:''}" aria-label="Score ${esc(x.domicile||'')}">
+        – <input type="number" min="0" max="300" inputmode="numeric" id="ra-a-${i}" style="width:64px" value="${s?s.as:''}" aria-label="Score ${esc(x.exterieur||'')}">
+        <button class="btn primary small" onclick="saisirResultat(${i})">Valider</button></td></tr>`; };
+  window.__resAttente=l;
+  slot.innerHTML=`<div class="card" style="margin-bottom:22px;border-color:var(--gold)"><div class="section-title" style="margin-top:0">⏳ Résultats en attente — ${l.length}</div>
+    <div class="faint" style="margin-bottom:8px">Matchs utilisés sans score officiel 2 h 30 après le coup d'envoi. Ta saisie règle les duels comme un score du fournisseur ; s'il donne un score terminé avant le règlement, c'est le sien qui compte.</div>
+    <div style="overflow-x:auto"><table><tbody>${l.map(ligne).join('')}</tbody></table></div></div>`;
+}
+async function saisirResultat(i){
+  const x=(window.__resAttente||[])[i]; if(!x) return;
+  const h=document.getElementById('ra-h-'+i).value, a=document.getElementById('ra-a-'+i).value;
+  if(h===''||a===''||!/^\d+$/.test(h)||!/^\d+$/.test(a)){ toast('Score incomplet', false); return; }
+  if(!confirm(`Enregistrer ${x.domicile} ${h} – ${a} ${x.exterieur} ?\nLes duels de ce match seront réglés sur ce score.`)) return;
+  try{
+    const r=await rpc('admin_resultat_saisir',{p_k:x.k, p_ev:x.ev_id, p_hs:+h, p_as:+a, p_motif:'saisie admin (site)'});
+    if(r&&r.ok){ toast(`Score enregistré : ${x.domicile} ${h}-${a} ${x.exterieur}`, true); chargerResultatsAttente(); }
+    else toast('Refusé : '+((r&&r.code)||'erreur'), false);
+  }catch(e){ toast('Erreur : '+(e.message||e), false); }
+}
 // ⟦ADMIN-RUSH-JOUEURS⟧ 09/11 : qui a joué à Rush sur la période (même règle que le chiffre : admin_bo_rush_joueurs_periode)
 async function voirJoueursRush(j){
   const slot=document.getElementById('rush-joueurs-slot'); if(!slot) return;
